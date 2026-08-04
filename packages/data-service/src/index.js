@@ -104,8 +104,12 @@ async function main() {
       // Chạy phiên và báo cáo nằm ở agent-runtime/api, không phải data-service.
       // Gọi qua tiến trình con để giữ ranh giới: data-service chỉ biết dữ liệu,
       // không biết agent nào đang giao dịch.
+      //
+      // --stub khi SIM_STUB=true: dùng cho lúc chưa có đủ API key cho mọi
+      // provider — phiên tự động hằng ngày vẫn chạy trọn luồng (không tốn
+      // token thật) cho tới khi tắt biến này.
       run_session: onTradingDayOnly('run_session',
-        () => spawnTask('sim:all', ['--date', nowVnDate()])),
+        () => spawnTask('sim:all', ['--date', nowVnDate(), ...(cfg.simStub ? ['--stub'] : [])])),
       report_day: onTradingDayOnly('report_day',
         () => spawnTask('report:day', ['--date', nowVnDate()])),
     },

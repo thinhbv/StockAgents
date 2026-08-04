@@ -74,6 +74,7 @@ cp .env.example .env
 | `DASHBOARD_TOKEN` | ⚠️ | **Bắt buộc nếu `DASHBOARD_HOST` khác localhost.** Thiếu thì server từ chối khởi động thay vì im lặng phơi dữ liệu ra mạng. |
 | `DATA_STALENESS_MINUTES` | | Mặc định 90. Dữ liệu cũ hơn ngần này thì không cho giao dịch. |
 | `EVENT_LOG_RETENTION_DAYS` | | Mặc định 90. |
+| `SIM_STUB` | | Mặc định `false`. Đặt `true` để phiên tự động hằng ngày (job `run_session` trong `data-service`) chạy `--stub` — dùng khi chưa có đủ API key cho mọi provider. |
 | `ANTHROPIC_API_KEY` | | Cho `claude_value`, `claude_contrarian`. |
 | `OPENAI_API_KEY` | | Cho `gpt_momentum`. |
 | `GEMINI_API_KEY` | | Cho `gemini_news`. |

@@ -38,6 +38,16 @@ test('loadConfig từ chối số không hợp lệ', () => {
   );
 });
 
+test('simStub mặc định false', () => {
+  const cfg = loadConfig(BASE);
+  assert.equal(cfg.simStub, false);
+});
+
+test('simStub đọc SIM_STUB=true', () => {
+  const cfg = loadConfig({ ...BASE, SIM_STUB: 'true' });
+  assert.equal(cfg.simStub, true);
+});
+
 test('config trả về là đóng băng', () => {
   const cfg = loadConfig(BASE);
   assert.throws(() => { cfg.databaseUrl = 'x'; }, TypeError);
