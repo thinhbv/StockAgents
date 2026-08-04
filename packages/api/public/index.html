@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bảng điều khiển Agent</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="board-head">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">▮▮</span>
+    <span class="brand-name">AGENT<span class="brand-thin">BOARD</span></span>
+  </div>
+
+  <dl class="head-stats">
+    <div class="stat"><dt>Phiên</dt><dd id="session-state" class="tag tag-unknown">—</dd></div>
+    <div class="stat"><dt>Dữ liệu</dt><dd id="data-freshness" class="tag tag-unknown">—</dd></div>
+    <div class="stat"><dt>Kết nối</dt><dd id="stream-state" class="tag tag-unknown">đang nối</dd></div>
+    <div class="stat"><dt>Giờ VN</dt><dd id="clock" class="figure">--:--:--</dd></div>
+  </dl>
+</header>
+
+<main class="layout">
+
+  <section class="board" aria-labelledby="board-title">
+    <h2 id="board-title" class="eyebrow">Bảng xếp hạng</h2>
+
+    <table class="price-board">
+      <thead>
+        <tr>
+          <th scope="col" class="col-agent">Agent</th>
+          <th scope="col" class="col-model">Model</th>
+          <th scope="col" class="num">NAV</th>
+          <th scope="col" class="num">Lãi/lỗ</th>
+          <th scope="col" class="num">Hôm nay</th>
+          <th scope="col" class="num">Tiền mặt</th>
+          <th scope="col" class="num">Vị thế</th>
+        </tr>
+      </thead>
+      <tbody id="board-body">
+        <tr class="empty"><td colspan="7">Chưa có agent nào. Chạy <code>npm run sim:day</code> để bắt đầu.</td></tr>
+      </tbody>
+    </table>
+
+    <div id="detail" class="detail" hidden>
+      <div class="detail-head">
+        <h3 id="detail-name">—</h3>
+        <p id="detail-persona" class="persona"></p>
+
+        <div class="agent-config">
+          <button id="config-edit-btn" type="button" class="config-edit-btn">Sửa AI/model</button>
+          <form id="config-form" class="config-form" hidden>
+            <label>Provider
+              <select id="config-provider"></select>
+            </label>
+            <label>Model
+              <select id="config-model"></select>
+            </label>
+            <button type="submit">Lưu</button>
+            <button type="button" id="config-cancel-btn">Hủy</button>
+            <span id="config-status" class="config-status"></span>
+          </form>
+        </div>
+      </div>
+
+      <section class="navchart" aria-labelledby="nav-title">
+        <div class="navchart-head">
+          <h4 id="nav-title" class="eyebrow">Đường NAV</h4>
+          <dl id="nav-metrics" class="nav-metrics"></dl>
+        </div>
+        <div id="nav-plot" class="nav-plot"></div>
+      </section>
+
+      <div class="detail-grid">
+        <section aria-labelledby="pos-title">
+          <h4 id="pos-title" class="eyebrow">Vị thế đang giữ</h4>
+          <div id="positions" class="positions"></div>
+        </section>
+
+        <section aria-labelledby="dec-title">
+          <h4 id="dec-title" class="eyebrow">Nhật ký lý luận</h4>
+          <ol id="decisions" class="decisions"></ol>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <aside class="feed" aria-labelledby="feed-title">
+    <h2 id="feed-title" class="eyebrow">Dòng sự kiện</h2>
+    <ol id="feed-list" class="feed-list"></ol>
+  </aside>
+
+</main>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

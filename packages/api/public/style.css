@@ -1,0 +1,377 @@
+/*
+  Bảng màu lấy từ quy ước bảng giá chứng khoán Việt Nam — thứ mà trader
+  Việt đọc theo phản xạ, không cần chú giải:
+    tím   = giá trần        xanh lơ = giá sàn
+    vàng  = tham chiếu      xanh    = tăng      đỏ = giảm
+  Ở đây tím dùng cho chốt lời, xanh lơ cho cắt lỗ — cùng logic "chạm biên".
+*/
+:root {
+  --board:      #0b0e14;
+  --board-2:    #121722;
+  --rule:       #1e2634;
+  --ink:        #e6eaf2;
+  --muted:      #7a869a;
+
+  --tran:       #c77dff;   /* trần / chốt lời */
+  --san:        #22d3ee;   /* sàn / cắt lỗ    */
+  --tham-chieu: #facc15;   /* tham chiếu      */
+  --tang:       #16c784;   /* tăng            */
+  --giam:       #ea3943;   /* giảm            */
+
+  --mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  --sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--board);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* Số liệu dùng chữ đẳng khoảng và tabular-nums: cột không rung khi giá nhảy. */
+.figure, .num, .price-board td.num, .price-board th.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+/* ---------- Đầu bảng ---------- */
+
+.board-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--board-2);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand-mark { color: var(--tang); letter-spacing: -2px; }
+.brand-name { font-weight: 700; letter-spacing: .18em; font-size: 13px; }
+.brand-thin { font-weight: 300; color: var(--muted); }
+
+.head-stats { display: flex; gap: 22px; margin: 0; flex-wrap: wrap; }
+.stat { display: flex; align-items: baseline; gap: 8px; }
+.stat dt {
+  font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+}
+.stat dd { margin: 0; }
+
+.tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .06em;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+.tag-ok      { color: var(--tang); }
+.tag-warn    { color: var(--tham-chieu); }
+.tag-bad     { color: var(--giam); }
+.tag-unknown { color: var(--muted); }
+
+/* ---------- Bố cục ---------- */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 0;
+  align-items: start;
+}
+
+.board { padding: 18px 20px 40px; min-width: 0; }
+.feed {
+  padding: 18px 20px 40px;
+  border-left: 1px solid var(--rule);
+  min-height: calc(100vh - 56px);
+}
+
+/* ---------- Bảng giá ---------- */
+
+.price-board {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.price-board th {
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+.price-board th.num { text-align: right; }
+
+.price-board td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+.price-board tbody tr { cursor: pointer; }
+.price-board tbody tr:hover { background: var(--board-2); }
+.price-board tbody tr[aria-selected="true"] {
+  background: var(--board-2);
+  box-shadow: inset 3px 0 0 var(--tham-chieu);
+}
+.price-board tbody tr:focus-visible {
+  outline: 2px solid var(--tham-chieu);
+  outline-offset: -2px;
+}
+
+.price-board .empty td {
+  color: var(--muted);
+  text-align: center;
+  padding: 30px 10px;
+  cursor: default;
+}
+.price-board .empty code {
+  font-family: var(--mono);
+  color: var(--tham-chieu);
+}
+
+.agent-name { font-weight: 600; }
+.col-model { color: var(--muted); font-size: 12px; }
+
+.up   { color: var(--tang); }
+.down { color: var(--giam); }
+.flat { color: var(--tham-chieu); }
+
+/* Nháy ô khi giá trị đổi — đúng cách bảng giá thật báo có biến động. */
+@keyframes flash-up   { from { background: rgba(22,199,132,.28); } to { background: transparent; } }
+@keyframes flash-down { from { background: rgba(234,57,67,.28);  } to { background: transparent; } }
+.flash-up   { animation: flash-up   .9s ease-out; }
+.flash-down { animation: flash-down .9s ease-out; }
+
+/* ---------- Chi tiết agent ---------- */
+
+.detail { margin-top: 28px; border-top: 1px solid var(--rule); padding-top: 18px; }
+.detail-head h3 { margin: 0 0 4px; font-size: 16px; letter-spacing: .02em; }
+.persona {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 12.5px;
+  max-width: 70ch;
+}
+
+.agent-config { margin: 0 0 18px; }
+.config-edit-btn, .config-form button {
+  background: var(--board-2);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: var(--sans);
+  cursor: pointer;
+}
+.config-edit-btn:hover, .config-form button:hover { border-color: var(--muted); }
+.config-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.config-form[hidden] { display: none; }
+.config-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.config-form select {
+  background: var(--board-2);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-family: var(--sans);
+  font-size: 12.5px;
+}
+.config-status { font-size: 12px; color: var(--muted); }
+.pending-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 10.5px;
+  color: var(--tham-chieu);
+  border: 1px solid var(--tham-chieu);
+}
+
+/* ---------- Đường NAV ---------- */
+
+.navchart { margin-bottom: 24px; }
+.navchart-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+.nav-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 22px;
+  margin: 0 0 8px;
+}
+.nav-metrics > div { display: flex; align-items: baseline; gap: 6px; }
+.nav-metrics dt {
+  color: var(--muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+.nav-metrics dd { margin: 0; font-family: var(--mono); font-size: 12.5px; }
+
+.nav-plot {
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--board-2);
+  padding: 10px 12px;
+}
+.nav-plot svg { display: block; width: 100%; height: auto; }
+.nav-plot .empty-note { margin: 0; color: var(--muted); font-size: 12.5px; }
+
+/* Đường tham chiếu là VỐN BAN ĐẦU — trên nó là lãi, dưới là lỗ, đúng logic
+   màu vàng "tham chiếu" của bảng giá. */
+.nav-base { stroke: var(--tham-chieu); stroke-dasharray: 3 4; stroke-width: 1; opacity: .55; }
+.nav-line { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.nav-line.up   { stroke: var(--tang); }
+.nav-line.down { stroke: var(--giam); }
+.nav-line.flat { stroke: var(--tham-chieu); }
+.nav-fill.up   { fill: rgba(22,199,132,.12); }
+.nav-fill.down { fill: rgba(234,57,67,.12); }
+.nav-fill.flat { fill: rgba(250,204,21,.10); }
+.nav-dot.up { fill: var(--tang); }
+.nav-dot.down { fill: var(--giam); }
+.nav-dot.flat { fill: var(--tham-chieu); }
+.nav-axis {
+  fill: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+  gap: 28px;
+}
+
+.position {
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.position-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+.position-sym { font-weight: 600; font-family: var(--mono); }
+.position-meta { color: var(--muted); font-size: 11.5px; margin: 4px 0 8px; font-family: var(--mono); }
+
+/* Thanh vị trí giữa cắt lỗ và chốt lời: nhìn là biết đang gần biên nào. */
+.exit-bar {
+  position: relative;
+  height: 5px;
+  background: var(--board-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.exit-bar .zone-loss   { position: absolute; left: 0;  top: 0; bottom: 0; background: rgba(34,211,238,.22); }
+.exit-bar .zone-profit { position: absolute; right: 0; top: 0; bottom: 0; background: rgba(199,125,255,.22); }
+.exit-bar .marker {
+  position: absolute; top: -3px; width: 2px; height: 11px;
+  background: var(--ink);
+}
+.exit-legend {
+  display: flex; justify-content: space-between;
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 5px;
+}
+.exit-legend .loss   { color: var(--san); }
+.exit-legend .profit { color: var(--tran); }
+
+.decisions { list-style: none; margin: 0; padding: 0; }
+.decision {
+  border-left: 2px solid var(--rule);
+  padding: 0 0 14px 12px;
+  margin: 0 0 2px;
+}
+.decision-top {
+  display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+  font-family: var(--mono); font-size: 12px;
+}
+.decision-act { font-weight: 700; }
+.decision-act.BUY  { color: var(--tang); }
+.decision-act.SELL { color: var(--giam); }
+.decision-time { color: var(--muted); font-size: 11px; }
+.decision-reason { margin: 4px 0 0; font-size: 12.5px; color: #c8d0de; }
+
+/* ---------- Dòng sự kiện ---------- */
+
+.feed-list { list-style: none; margin: 0; padding: 0; }
+.feed-item {
+  border-bottom: 1px solid var(--rule);
+  padding: 8px 0;
+  font-size: 12px;
+}
+.feed-top {
+  display: flex; gap: 8px; align-items: baseline;
+  font-family: var(--mono); font-size: 11px;
+}
+.feed-time { color: var(--muted); }
+.feed-type { letter-spacing: .04em; }
+.feed-body { margin: 3px 0 0; color: #c8d0de; }
+
+.t-trigger  { color: var(--tham-chieu); }
+.t-take     { color: var(--tran); }
+.t-stop     { color: var(--san); }
+.t-order    { color: var(--tang); }
+.t-reject   { color: var(--giam); }
+.t-session  { color: var(--muted); }
+
+/* ---------- Đáp ứng ---------- */
+
+@media (max-width: 1000px) {
+  .layout { grid-template-columns: 1fr; }
+  .feed { border-left: 0; border-top: 1px solid var(--rule); min-height: 0; }
+  .detail-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .col-model, .price-board th:nth-child(6), .price-board td:nth-child(6) { display: none; }
+  .head-stats { gap: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flash-up, .flash-down { animation: none; }
+}

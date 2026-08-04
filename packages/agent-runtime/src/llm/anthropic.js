@@ -1,0 +1,43 @@
+/**
+ * Provider Claude. Dùng tool-use để ép structured output — đó là cách
+ * đáng tin nhất để nhận JSON đúng schema từ Claude.
+ *
+ * Gọi HTTP trực tiếp, không thêm SDK: chỉ một endpoint, và thêm dependency
+ * cho một lời gọi fetch là không đáng.
+ */
+const API_URL = 'https://api.anthropic.com/v1/messages';
+
+export function createAnthropicProvider({ apiKey, model, fetchImpl = fetch }) {
+  return {
+    name: 'anthropic',
+    async complete({ system, messages, jsonSchema, maxTokens = 2048, temperature = 1 }) {
+      const res = await fetchImpl(API_URL, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model, max_tokens: maxTokens, temperature, system, messages,
+          tools: [{
+            name: 'submit_decisions',
+            description: 'Nộp danh sách quyết định giao dịch',
+            input_schema: jsonSchema,
+          }],
+          tool_choice: { type: 'tool', name: 'submit_decisions' },
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`anthropic: HTTP ${res.status} — ${await res.text()}`);
+      }
+      const body = await res.json();
+      const toolUse = body.content?.find(c => c.type === 'tool_use');
+      if (!toolUse) {
+        throw new Error('anthropic: phản hồi không chứa tool_use — không lấy được JSON');
+      }
+      return toolUse.input.decisions ?? toolUse.input;
+    },
+  };
+}

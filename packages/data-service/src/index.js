@@ -1,0 +1,139 @@
+import { readFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
+import * as core from 'tradingview-mcp/core';
+import {
+  createClient, loadConfig,
+  createUniverseRepo, createMarketRepo, createOpsRepo, createEventsRepo,
+  createNewsRepo,
+} from '@stockagents/db';
+import { createBroker } from './cdp/broker.js';
+import { startScheduler } from './scheduler.js';
+import { nowVnDate, isTradingDay } from './lib/vn_time.js';
+import { runIngestPrices } from './jobs/ingest_prices.js';
+import { runPollQuotes } from './jobs/poll_quotes.js';
+import { runPruneEvents } from './jobs/prune_events.js';
+import { runIngestNews } from './jobs/ingest_news.js';
+import { loadNewsSources, loadMarketIndices } from './news/sources.js';
+
+/**
+ * Chạy một npm script trong tiến trình riêng.
+ *
+ * Giữ ranh giới giữa các package: data-service điều phối LỊCH, nhưng không
+ * import agent-runtime hay api — chúng có vòng đời và phụ thuộc riêng.
+ */
+function spawnTask(script, args = []) {
+  return new Promise((resolve) => {
+    const child = spawn('npm', ['run', script, '--', ...args], {
+      cwd: new URL('../../../', import.meta.url).pathname,
+      stdio: 'inherit', shell: process.platform === 'win32',
+    });
+    child.on('exit', (code) => {
+      if (code !== 0) console.error(`[scheduler] ${script} thoát với mã ${code}`);
+      resolve({ script, code });
+    });
+    child.on('error', (err) => {
+      console.error(`[scheduler] không chạy được ${script}: ${err.message}`);
+      resolve({ script, code: -1 });
+    });
+  });
+}
+
+export function createRepos(client) {
+  return {
+    universe: createUniverseRepo(client),
+    market: createMarketRepo(client),
+    ops: createOpsRepo(client),
+    events: createEventsRepo(client),
+    news: createNewsRepo(client),
+  };
+}
+
+async function seedUniverse(repos) {
+  const raw = await readFile(new URL('../../../config/universe.json', import.meta.url), 'utf8');
+  const n = await repos.universe.upsertMany(JSON.parse(raw));
+  console.log(`[data-service] universe: ${n} mã`);
+}
+
+async function main() {
+  const cfg = loadConfig();
+  const client = createClient(cfg.databaseUrl);
+  const repos = createRepos(client);
+  const broker = createBroker({ core });
+
+  await seedUniverse(repos);
+
+  /**
+   * Bọc một job để nó không chạy vào ngày nghỉ lễ.
+   *
+   * Cron `* * * * 1-5` chỉ loại được thứ Bảy và Chủ nhật. Nghỉ Tết rơi vào
+   * thứ Ba thì sàn đóng nhưng cron vẫn bắn: ingest sẽ ghi lại đúng dữ liệu
+   * của phiên hôm trước với `captured_at` của hôm nay — trông tươi nhưng
+   * không phải, và cổng DATA_READY sẽ cho agent giao dịch trên nó.
+   *
+   * `poll_quotes` không cần bọc: nó đã tự kiểm tra qua `isTradingWindow`.
+   */
+  function onTradingDayOnly(name, fn) {
+    return async () => {
+      const holidays = await repos.ops.listHolidays();
+      const today = nowVnDate();
+      if (!isTradingDay(today, holidays)) {
+        console.log(`[scheduler] ${today} không phải ngày giao dịch, bỏ qua ${name}`);
+        return { skipped: true, reason: 'không phải ngày giao dịch' };
+      }
+      return fn();
+    };
+  }
+
+  const scheduler = startScheduler({
+    jobs: {
+      ingest_prices: onTradingDayOnly('ingest_prices', () => runIngestPrices({ broker, repos })),
+      // Phase 1 chưa có vị thế nên poll toàn universe.
+      // Phase 3 sẽ thay bằng hợp nhất các mã đang giữ của 5 agent.
+      poll_quotes: async () => {
+        const symbols = (await repos.universe.listActive()).map(s => s.symbol);
+        return runPollQuotes({ broker, repos, symbols });
+      },
+      prune_events: () => runPruneEvents({ repos, retentionDays: cfg.eventLogRetentionDays }),
+
+      ingest_news: onTradingDayOnly('ingest_news', async () => {
+        const sources = await loadNewsSources({ limit: 12 });
+        return runIngestNews({ repos, sources, indices: () => loadMarketIndices() });
+      }),
+
+      // Chạy phiên và báo cáo nằm ở agent-runtime/api, không phải data-service.
+      // Gọi qua tiến trình con để giữ ranh giới: data-service chỉ biết dữ liệu,
+      // không biết agent nào đang giao dịch.
+      run_session: onTradingDayOnly('run_session',
+        () => spawnTask('sim:all', ['--date', nowVnDate()])),
+      report_day: onTradingDayOnly('report_day',
+        () => spawnTask('report:day', ['--date', nowVnDate()])),
+    },
+  });
+
+  const shutdown = async (signal) => {
+    console.log(`[data-service] nhận ${signal}, đang dừng...`);
+    scheduler.stop();
+    // Chờ job đang chạy dở xong trước khi đóng pool (Finding 2) — `stop()`
+    // chỉ chặn các lần chạy TƯƠNG LAI, ingest có thể mất ~15s kể cả trên
+    // đường lỗi, và một restart PM2 rơi đúng lúc đó sẽ đóng pool giữa chừng
+    // một lần ghi DB nếu không có bước drain này.
+    await scheduler.drain();
+    await client.close();
+    process.exit(0);
+  };
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  console.log('[data-service] đã khởi động');
+}
+
+// Chỉ chạy scheduler khi file này là entry point.
+// `cli.js` import `createRepos` từ đây — không có guard thì chạy CLI
+// sẽ vô tình khởi động luôn scheduler.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error('[data-service] lỗi khởi động:', err);
+    process.exit(1);
+  });
+}

@@ -1,0 +1,26 @@
+{
+  "name": "stockagents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20.20.0" },
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "db:create": "node scripts/create-db.mjs",
+    "migrate": "node packages/db/src/migrate.js",
+    "test": "node scripts/run-tests.mjs",
+    "data-service": "node packages/data-service/src/index.js",
+    "ingest:prices": "node packages/data-service/src/cli.js ingest-prices",
+    "poll:quotes": "node packages/data-service/src/cli.js poll-quotes",
+    "sim:session": "node packages/agent-runtime/src/cli.js",
+    "sim:day": "node packages/agent-runtime/src/cli_day.js",
+    "sim:all": "node packages/agent-runtime/src/cli_all.js",
+    "report:day": "node packages/api/src/cli_report.js",
+    "api": "node packages/api/src/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "node-cron": "^4.2.1",
+    "pg": "^8.13.1"
+  }
+}

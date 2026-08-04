@@ -1,0 +1,13 @@
+export { createClient } from './client.js';
+export { runMigrations } from './migrate.js';
+export { loadConfig } from './config.js';
+export { assertAgentScope } from './repositories/_guard.js';
+export { createUniverseRepo } from './repositories/universe.js';
+export { createMarketRepo } from './repositories/market.js';
+export { createOpsRepo } from './repositories/ops.js';
+export { createEventsRepo } from './repositories/events.js';
+export { createAgentsRepo } from './repositories/agents.js';
+export { createTradingRepo } from './repositories/trading.js';
+export { createTriggersRepo } from './repositories/triggers.js';
+export { createLessonsRepo } from './repositories/lessons.js';
+export { createNewsRepo } from './repositories/news.js';
