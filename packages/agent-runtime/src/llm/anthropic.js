@@ -10,7 +10,11 @@ const API_URL = 'https://api.anthropic.com/v1/messages';
 export function createAnthropicProvider({ apiKey, model, fetchImpl = fetch }) {
   return {
     name: 'anthropic',
-    async complete({ system, messages, jsonSchema, maxTokens = 2048, temperature = 1 }) {
+    // 2048 từng đủ khi agent chỉ mua 1-2 mã mỗi phiên; từ khi bỏ trần số vị
+    // thế/số mã mới (agent tự do dàn trải), một phiên có thể ra 8-10 quyết
+    // định cùng lúc — đã thấy thật: tool_use bị cắt giữa chừng, phần tử cuối
+    // trong `decisions` rỗng toàn bộ field vì JSON chưa kịp ghi xong.
+    async complete({ system, messages, jsonSchema, maxTokens = 4096, temperature = 1 }) {
       const res = await fetchImpl(API_URL, {
         method: 'POST',
         headers: {

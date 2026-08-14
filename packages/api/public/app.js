@@ -59,14 +59,22 @@ async function refreshSession() {
   try {
     const s = await getJson('/api/session');
     const kind = { DATA_READY: 'ok', DATA_PARTIAL: 'warn', DATA_STALE: 'bad' }[s.state] ?? 'unknown';
-    setTag($('session-state'), s.state === 'UNKNOWN' ? 'chưa chạy' : s.state, kind);
+    const label = { DATA_READY: 'dữ liệu sẵn sàng', DATA_PARTIAL: 'dữ liệu thiếu một phần', DATA_STALE: 'dữ liệu cũ' }[s.state]
+      ?? (s.state === 'UNKNOWN' ? 'chưa chạy' : s.state);
+    setTag($('session-state'), label, kind);
 
     if (!s.dataCapturedAt) {
       setTag($('data-freshness'), 'chưa có', s.state === 'UNKNOWN' ? 'unknown' : 'bad');
       return;
     }
+    // ingest_prices chỉ chạy 1 lần/ngày (nến ngày mới chỉ có sau khi đóng
+    // cửa) nên "cũ" vài trăm phút là bình thường — ngưỡng đỏ đặt ở 20 tiếng
+    // để bắt đúng trường hợp thật sự hỏng: quên chạy/ingest lỗi từ hôm qua.
     const mins = Math.round((Date.now() - new Date(s.dataCapturedAt).getTime()) / 60000);
-    setTag($('data-freshness'), `${mins} phút trước`, mins > 90 ? 'bad' : 'ok');
+    const time = new Date(s.dataCapturedAt).toLocaleTimeString('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit',
+    });
+    setTag($('data-freshness'), `tính lúc ${time}`, mins > 20 * 60 ? 'bad' : 'ok');
   } catch {
     setTag($('session-state'), 'mất kết nối', 'bad');
   }
@@ -165,11 +173,12 @@ function renderPositions(list) {
       </div>
       <p class="position-meta">${p.qtyTotal.toLocaleString('vi-VN')} cp
         · bán được ${p.qtySellable.toLocaleString('vi-VN')}
-        · vốn ${vnd(p.avgCostVnd)}</p>
+        · giá 1 cp ${vnd(p.avgCostVnd)}
+        · tổng vốn ${vnd(p.avgCostVnd * p.qtyTotal)}</p>
       <div class="exit-bar">
-        <span class="zone-loss" style="width:14%"></span>
-        <span class="zone-profit" style="width:14%"></span>
-        <span class="marker" style="left:${at}%"></span>
+        <span class="zone-loss"></span>
+        <span class="zone-profit"></span>
+        <span class="marker ${dirClass(now)}" style="left:${at}%"></span>
       </div>
       <div class="exit-legend">
         <span class="loss">cắt lỗ ${stop}%</span>
@@ -203,14 +212,17 @@ function renderNavMetrics(m, latestNav, initialCapital) {
     : null;
 
   const rows = [
-    ['NAV', vnd(latestNav), ''],
+    ['Tổng tài sản', vnd(latestNav), ''],
     ['Lãi/lỗ', pct(ret), dirClass(ret)],
     // maxDrawdown lưu dạng % dương (mức sụt sâu nhất) — luôn là tin xấu nên
     // tô đỏ cố định, không dùng dirClass.
-    ['Sụt sâu nhất', m && m.maxDrawdown !== null ? `-${m.maxDrawdown}%` : '—', m?.maxDrawdown ? 'down' : ''],
+    ['Lỗ sâu nhất', m && m.maxDrawdown !== null ? `-${m.maxDrawdown}%` : '—', m?.maxDrawdown ? 'down' : ''],
     ['Tỷ lệ thắng', m && m.winRate !== null ? `${Math.round(m.winRate * 100)}%` : '—', ''],
     ['Sharpe', m && m.sharpe !== null ? m.sharpe : '—', ''],
     ['Số vòng', m ? m.tradeCount : '—', ''],
+    // Dương: tự tin đúng lúc hơn lúc sai. Âm: càng tự tin càng dễ sai.
+    ['Hiệu chuẩn tin cậy', m && m.confidenceCalibration !== null ? m.confidenceCalibration : '—',
+      m && m.confidenceCalibration !== null ? dirClass(m.confidenceCalibration) : ''],
   ];
 
   for (const [label, value, cls] of rows) {
@@ -266,6 +278,10 @@ function renderNavChart({ series, initialCapital, metrics }) {
              + `L${pts[0][0].toFixed(1)},${(top + innerH).toFixed(1)} Z`;
 
   const baseY = y(initialCapital).toFixed(1);
+  // NAV gần như không đổi thì baseY trùng vị trí nhãn hi/lo — hai chữ
+  // "1,00 tỷ" chồng lên nhau, không đọc được. Đường nét đứt đã đủ đánh dấu
+  // mốc vốn ban đầu, nên bỏ nhãn số khi nó đứng quá gần nhãn hi hoặc lo.
+  const baseLabelHidden = Math.abs(baseY - (top + 4)) < 12 || Math.abs(baseY - (top + innerH)) < 12;
   // Chỉ ghi nhãn ngày ở vài mốc — 90 nhãn chồng lên nhau thì không đọc được.
   const step = Math.max(1, Math.ceil(series.length / 6));
   const ticks = series
@@ -276,10 +292,10 @@ function renderNavChart({ series, initialCapital, metrics }) {
 
   box.innerHTML = `
     <svg viewBox="0 0 ${w} ${h}" role="img"
-         aria-label="Đường NAV ${series.length} phiên, hiện tại ${vnd(latest)} đồng">
+         aria-label="Đường tổng tài sản ${series.length} phiên, hiện tại ${vnd(latest)} đồng">
       <text class="nav-axis" x="${left - 6}" y="${(top + 4).toFixed(1)}" text-anchor="end">${shortVnd(hi)}</text>
       <text class="nav-axis" x="${left - 6}" y="${(top + innerH).toFixed(1)}" text-anchor="end">${shortVnd(lo)}</text>
-      <text class="nav-axis" x="${left - 6}" y="${baseY}" text-anchor="end">${shortVnd(initialCapital)}</text>
+      ${baseLabelHidden ? '' : `<text class="nav-axis" x="${left - 6}" y="${baseY}" text-anchor="end">${shortVnd(initialCapital)}</text>`}
       <line class="nav-base" x1="${left}" y1="${baseY}" x2="${w - right}" y2="${baseY}"></line>
       <path class="nav-fill ${dir}" d="${area}"></path>
       <path class="nav-line ${dir}" d="${line}"></path>
@@ -422,6 +438,7 @@ const TYPE_STYLE = {
   'order.rejected': 't-reject',
   'session.state': 't-session',
   'agent.skipped': 't-reject',
+  'market.snapshot': 't-session',
 };
 
 function describe(e) {
@@ -431,7 +448,10 @@ function describe(e) {
     case 'session.state': return `${p.state}${p.dataState ? ` · dữ liệu ${p.dataState}` : ''}`;
     case 'agent.started': return `đánh thức: ${(p.symbols ?? []).join(', ')}`;
     case 'agent.skipped': return `bỏ lượt — ${p.error}`;
-    case 'metrics.updated': return `NAV ${vnd(p.nav)} · ${pct(p.totalReturnPct)}`;
+    case 'metrics.updated': return `Tổng tài sản ${vnd(p.nav)} · ${pct(p.totalReturnPct)}`;
+    case 'market.snapshot': return (p.indices ?? [])
+      .map(i => `${i.indexCode} ${i.value} (${pct(i.changePct)})`)
+      .join(' · ');
     case 'data.ingested': return `${p.succeeded}/${p.total} mã`;
     case 'data.stale': return `dữ liệu không dùng được — ${p.reason ?? p.job ?? ''}`;
     default: return JSON.stringify(p).slice(0, 120);
@@ -481,7 +501,7 @@ function openStream() {
   for (const type of [
     'session.state', 'agent.started', 'agent.decided', 'agent.skipped',
     'order.placed', 'order.filled', 'order.rejected',
-    'trigger.fired', 'position.marked', 'metrics.updated',
+    'trigger.fired', 'position.marked', 'metrics.updated', 'market.snapshot',
     'data.ingested', 'data.stale',
   ]) es.addEventListener(type, handle);
 

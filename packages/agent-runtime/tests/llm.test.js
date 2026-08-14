@@ -17,6 +17,17 @@ test('validateDecision chấp nhận quyết định hợp lệ', () => {
   assert.equal(r.value.action, 'BUY');
 });
 
+test('validateDecision ép dấu exitPlan — LLM lỡ trả dương/âm lẫn lộn vẫn ra đúng quy ước', () => {
+  const r = validateDecision({
+    ...good,
+    exitPlan: { stopLossPct: 5, takeProfitPct: -8, trailingPct: -6 },
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.value.exitPlan.stopLossPct, -5);
+  assert.equal(r.value.exitPlan.takeProfitPct, 8);
+  assert.equal(r.value.exitPlan.trailingPct, 6);
+});
+
 test('validateDecision từ chối hành động lạ', () => {
   const r = validateDecision({ ...good, action: 'YOLO' });
   assert.equal(r.ok, false);
@@ -26,6 +37,13 @@ test('validateDecision từ chối hành động lạ', () => {
 test('validateDecision từ chối confidence ngoài 0..1', () => {
   assert.equal(validateDecision({ ...good, confidence: 5 }).ok, false);
   assert.equal(validateDecision({ ...good, confidence: -0.1 }).ok, false);
+});
+
+test('validateDecision bắt buộc phải có confidence — thang điểm chung giữa các agent', () => {
+  const { confidence, ...withoutConfidence } = good;
+  const r = validateDecision(withoutConfidence);
+  assert.equal(r.ok, false);
+  assert.match(r.errors.join(' '), /confidence/);
 });
 
 test('validateDecision bắt buộc có reason không rỗng', () => {

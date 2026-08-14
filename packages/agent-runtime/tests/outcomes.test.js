@@ -5,7 +5,7 @@ import { createAgentsRepo, createTradingRepo, createLessonsRepo } from '@stockag
 import { matchSell, recordOutcomes } from '../src/sim/outcomes.js';
 import {
   winRate, sharpe, maxDrawdown, avgHoldingDays, lessonHitRate,
-  dailyReturns, computeAndSaveMetrics,
+  dailyReturns, computeAndSaveMetrics, confidenceCalibration,
 } from '../src/sim/metrics.js';
 
 const silent = { info() {}, warn() {}, error() {} };
@@ -192,6 +192,59 @@ test('lessonHitRate tính trên tổng lần truy xuất toàn agent', () => {
     { timesRetrieved: 10, timesHelped: 2 },
   ]), 0.4);
   assert.equal(lessonHitRate([{ timesRetrieved: 0, timesHelped: 0 }]), null);
+});
+
+test('confidenceCalibration dương khi agent tự tin hơn lúc thắng', () => {
+  const c = confidenceCalibration([
+    { pnl: 100, entryConfidence: 0.9 },
+    { pnl: -50, entryConfidence: 0.3 },
+  ]);
+  assert.equal(c, 0.6);
+});
+
+test('confidenceCalibration null khi chưa có đủ cả vòng thắng lẫn vòng thua', () => {
+  assert.equal(confidenceCalibration([{ pnl: 100, entryConfidence: 0.9 }]), null);
+  assert.equal(confidenceCalibration([]), null);
+});
+
+test('confidenceCalibration bỏ qua vòng thiếu entryConfidence, không đoán bừa', () => {
+  const c = confidenceCalibration([
+    { pnl: 100, entryConfidence: 0.9 },
+    { pnl: -50, entryConfidence: null },
+    { pnl: -50, entryConfidence: 0.3 },
+  ]);
+  assert.equal(c, 0.6);
+});
+
+test('listOutcomes trả entryConfidence từ chính lệnh MUA mở vòng', async () => {
+  await repos.trading.insertTrade('a1', {
+    symbol: 'HOSE:FPT', action: 'BUY', priceVnd: 50_000, qty: 1000, reason: 'mua', confidence: 0.85,
+  });
+  await sell('a1', 'HOSE:FPT', 1000, 60_000);
+  await recordOutcomes({ repos, agentId: 'a1', logger: silent });
+
+  const list = await repos.trading.listOutcomes('a1');
+  assert.equal(list[0].entryConfidence, 0.85);
+});
+
+test('computeAndSaveMetrics tính và lưu confidenceCalibration, đọc lại đúng', async () => {
+  await repos.trading.insertTrade('a1', {
+    symbol: 'HOSE:FPT', action: 'BUY', priceVnd: 50_000, qty: 1000, reason: 'mua', confidence: 0.9,
+  });
+  await sell('a1', 'HOSE:FPT', 1000, 60_000); // vòng lãi
+  await repos.trading.insertTrade('a1', {
+    symbol: 'HOSE:VCB', action: 'BUY', priceVnd: 20_000, qty: 500, reason: 'mua', confidence: 0.3,
+  });
+  await repos.trading.insertTrade('a1', {
+    symbol: 'HOSE:VCB', action: 'SELL', priceVnd: 15_000, qty: 500, reason: 'bán', confidence: 0.5,
+  }); // vòng lỗ
+  await recordOutcomes({ repos, agentId: 'a1', logger: silent });
+
+  const m = await computeAndSaveMetrics({ repos, agentId: 'a1', tradeDate: '2026-07-30' });
+  assert.ok(m.confidenceCalibration > 0, `agent tự tin hơn lúc thắng, nhận ${m.confidenceCalibration}`);
+
+  const saved = await repos.agents.getMetrics('a1', '2026-07-30');
+  assert.equal(saved.confidenceCalibration, m.confidenceCalibration);
 });
 
 test('dailyReturns bỏ qua phần tử đầu và tính đúng tỷ lệ', () => {

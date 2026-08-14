@@ -22,7 +22,7 @@ test('SCHEDULES định nghĩa đủ các job của hệ thống', () => {
   const names = SCHEDULES.map(s => s.name).sort();
   assert.deepEqual(names, [
     'ingest_news', 'ingest_prices', 'poll_quotes', 'prune_events',
-    'report_day', 'run_session',
+    'report_day', 'watch_close',
   ]);
 });
 
@@ -41,10 +41,10 @@ test('thứ tự trong ngày đúng: lấy giá trước tin, tin trước phiê
   };
   assert.ok(minuteOf('ingest_prices') < minuteOf('ingest_news'),
     'phải có giá trước khi thu tin');
-  assert.ok(minuteOf('ingest_news') < minuteOf('run_session'),
-    'agent phải thấy tin trước khi quyết định');
-  assert.ok(minuteOf('run_session') < minuteOf('report_day'),
-    'báo cáo phải sau khi phiên chạy xong');
+  assert.ok(minuteOf('ingest_news') < minuteOf('watch_close'),
+    'agent phải thấy tin trước khi chốt sổ');
+  assert.ok(minuteOf('watch_close') < minuteOf('report_day'),
+    'báo cáo phải sau khi phiên đã chốt sổ');
 });
 
 test('cron của ingest_prices chạy 08:30 các ngày T2–T6', () => {

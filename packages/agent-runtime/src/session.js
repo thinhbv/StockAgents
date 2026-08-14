@@ -57,6 +57,9 @@ export async function runSession({
   const engine = createEngine({ repos, logger });
   const runner = createRunner({ repos, engine, provider, logger });
 
+  const indicatorsMissingSymbols = new Set(
+    context.universe.filter(u => u.indicatorsMissing).map(u => u.symbol));
+
   const run = await runner.runOnce({
     agentId,
     agentDef: { ...def, personaPrompt: def?.personaPrompt ?? '', riskConfig: risk },
@@ -65,7 +68,7 @@ export async function runSession({
       tradeDate, refPriceMap, tickPriceMap,
       nav: context.portfolio.nav,
       dayPnl: prevSnap ? context.portfolio.nav - prevSnap.nav : 0,
-      risk,
+      risk, indicatorsMissingSymbols,
     },
   });
 

@@ -10,7 +10,10 @@ const BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 export function createGeminiProvider({ apiKey, model, fetchImpl = fetch, baseUrl = BASE }) {
   return {
     name: 'gemini',
-    async complete({ system, messages, jsonSchema, maxTokens = 2048, temperature = 1 }) {
+    // 4096, không phải 2048 mặc định cũ — xem lý do trong anthropic.js: agent
+    // giờ có thể ra 8-10 quyết định/phiên từ khi bỏ trần số vị thế, và JSON
+    // dài bị cắt giữa chừng sẽ để lại phần tử rỗng ở cuối mảng `decisions`.
+    async complete({ system, messages, jsonSchema, maxTokens = 4096, temperature = 1 }) {
       const res = await fetchImpl(`${baseUrl}/${model}:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

@@ -10,10 +10,15 @@ const DECISION_SCHEMA = {
         properties: {
           action: { type: 'string', enum: ['BUY', 'SELL', 'HOLD'] },
           symbol: { type: 'string' },
-          quantity: { type: 'integer' },
+          // minimum ở đây là ràng buộc cho PROVIDER lúc sinh JSON — đã thấy
+          // thật một lượt trả quantity: 0 cho BUY, bị validateDecision chặn
+          // đúng nhưng phí mất một lượt. Không thay được validateDecision
+          // (schema đâu biết BUY/SELL mới bắt buộc >0, HOLD thì không cần),
+          // chỉ giảm khả năng provider sinh ra giá trị vô nghĩa từ đầu.
+          quantity: { type: 'integer', minimum: 1 },
           orderType: { type: 'string', enum: ['MARKET', 'LIMIT', 'ATC'] },
           limitPriceVnd: { type: 'number' },
-          confidence: { type: 'number' },
+          confidence: { type: 'number', minimum: 0, maximum: 1 },
           reason: { type: 'string' },
           exitPlan: {
             type: 'object',
@@ -25,7 +30,7 @@ const DECISION_SCHEMA = {
             },
           },
         },
-        required: ['action', 'symbol', 'reason'],
+        required: ['action', 'symbol', 'reason', 'confidence'],
       },
     },
   },

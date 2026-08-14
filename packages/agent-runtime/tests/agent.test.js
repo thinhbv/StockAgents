@@ -56,6 +56,18 @@ test('buildContext gói đủ danh mục, universe và ràng buộc', async () =
   assert.equal(c.universe.length, 1);
   assert.equal(c.universe[0].indicators.rsi14, 62.5);
   assert.ok(c.constraints.availableCash > 0);
+  // Trần 20% NAV (mặc định), trừ phí 0,15%, làm tròn lô chẵn 100 — không phải
+  // 1000000000/100000=10000cp (sẽ vượt tỷ trọng tối đa một mã).
+  assert.equal(c.universe[0].maxAffordableQty, 1900);
+});
+
+test('maxAffordableQty = 0 khi thiếu giá, không đoán bừa', async () => {
+  const c = await buildContext({
+    repos, agentId: 'a1', tradeDate: '2026-07-20',
+    universe: [{ symbol: 'HOSE:FPT', sector: 'Công nghệ' }],
+    snapshots: new Map(), priceMap: new Map(), trigger: 'SESSION_OPEN',
+  });
+  assert.equal(c.universe[0].maxAffordableQty, 0);
 });
 
 test('buildContext KHÔNG lộ dữ liệu của agent khác', async () => {

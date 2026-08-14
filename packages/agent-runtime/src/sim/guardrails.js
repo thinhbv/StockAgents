@@ -7,7 +7,6 @@
  */
 
 export const DEFAULT_RISK = Object.freeze({
-  maxPositions: 8,
   maxPositionPctNav: 20,
   dailyLossLimitPct: 5,
 });
@@ -15,7 +14,14 @@ export const DEFAULT_RISK = Object.freeze({
 const deny = (reason) => ({ ok: false, reason });
 const allow = () => ({ ok: true });
 
-export function checkBuy({ symbol, costVnd, cash, nav, positions, risk = DEFAULT_RISK }) {
+export function checkBuy({
+  symbol, costVnd, cash, nav, positions, risk = DEFAULT_RISK, indicatorsMissing = false,
+}) {
+  // Thiếu chỉ báo kỹ thuật cho mã này (đã có giá nhưng không có RSI/MACD/MA...)
+  // thì không mở vị thế MỚI — cùng triết lý với DATA_STALE chặn cả phiên
+  // (spec §4), chỉ thu hẹp xuống một mã thay vì cả universe. Bán vẫn cho phép
+  // (checkSell không đụng tới) vì thoát vị thế để bảo toàn vốn không nên bị chặn.
+  if (indicatorsMissing) return deny(`thiếu chỉ báo kỹ thuật cho ${symbol} — không mở vị thế mới khi thiếu dữ liệu`);
   if (!Number.isFinite(costVnd) || costVnd <= 0) return deny(`chi phí không hợp lệ: ${costVnd}`);
   if (!Number.isFinite(cash)) return deny(`tiền mặt không hợp lệ: ${cash}`);
   if (!Number.isFinite(nav) || nav <= 0) return deny(`NAV không hợp lệ: ${nav}`);
@@ -30,11 +36,10 @@ export function checkBuy({ symbol, costVnd, cash, nav, positions, risk = DEFAULT
       `vượt tỷ trọng tối đa một mã: ${pctNav.toFixed(1)}% > ${risk.maxPositionPctNav}% NAV`);
   }
 
-  const isNewPosition = !positions.some(p => p.symbol === symbol);
-  if (isNewPosition && positions.length >= risk.maxPositions) {
-    return deny(`đã đạt số vị thế tối đa: ${positions.length}/${risk.maxPositions}`);
-  }
-
+  // Không giới hạn SỐ LOẠI mã đang giữ — agent tự quyết định dàn trải bao
+  // nhiêu mã. Tiền mặt và tỷ trọng tối đa/mã ở trên vẫn chặn được cả hai rủi
+  // ro thật (đòn bẩy, dồn hết vào một mã); còn số lượng mã là lựa chọn của
+  // agent, không phải hàng rào rủi ro.
   return allow();
 }
 

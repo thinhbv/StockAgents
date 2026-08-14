@@ -15,6 +15,21 @@ export const DECISION_KEYS = [
 const ACTIONS = new Set(['BUY', 'SELL', 'HOLD']);
 const ORDER_TYPES = new Set(['MARKET', 'LIMIT', 'ATC']);
 
+// LLM đôi khi trả stopLossPct/takeProfitPct/trailingPct dương-âm lẫn lộn —
+// "cắt lỗ 5%" và "cắt lỗ -5%" cùng một ý nhưng khác dấu. triggers.js so sánh
+// unrealizedPct <= stopLossPct: nếu dấu sai, ngưỡng cắt lỗ dương sẽ khớp
+// gần như ngay khi mua (vì lãi thường chưa vượt qua số dương đó), bán oan.
+// Ép dấu ở đây — điểm nạp DUY NHẤT của mọi exitPlan — để không agent nào
+// né được, thay vì sửa từng nơi gọi.
+function normalizeExitPlan(plan) {
+  if (!plan || typeof plan !== 'object') return {};
+  const p = { ...plan };
+  if (Number.isFinite(p.stopLossPct)) p.stopLossPct = -Math.abs(p.stopLossPct);
+  if (Number.isFinite(p.takeProfitPct)) p.takeProfitPct = Math.abs(p.takeProfitPct);
+  if (Number.isFinite(p.trailingPct)) p.trailingPct = Math.abs(p.trailingPct);
+  return p;
+}
+
 export function validateDecision(raw) {
   const errors = [];
   const d = raw ?? {};
@@ -28,10 +43,11 @@ export function validateDecision(raw) {
   if (typeof d.reason !== 'string' || d.reason.trim() === '') {
     errors.push('reason bắt buộc và không được rỗng — lý do là dữ liệu cho vòng học');
   }
-  if (d.confidence !== null && d.confidence !== undefined) {
-    if (typeof d.confidence !== 'number' || !(d.confidence >= 0 && d.confidence <= 1)) {
-      errors.push(`confidence phải trong khoảng 0..1, nhận: ${d.confidence}`);
-    }
+  // Bắt buộc, không chỉ kiểm khi có mặt — đây là thang điểm CHUNG cho cả 5
+  // agent (spec §10 metrics), nên một agent bỏ trống sẽ làm hỏng phép so
+  // sánh confidenceCalibration giữa các agent (sim/metrics.js).
+  if (typeof d.confidence !== 'number' || !(d.confidence >= 0 && d.confidence <= 1)) {
+    errors.push(`confidence bắt buộc và phải trong khoảng 0..1, nhận: ${d.confidence}`);
   }
 
   if (d.action === 'BUY' || d.action === 'SELL') {
@@ -59,7 +75,7 @@ export function validateDecision(raw) {
       limitPriceVnd: Number.isFinite(d.limitPriceVnd) ? d.limitPriceVnd : null,
       confidence: typeof d.confidence === 'number' ? d.confidence : null,
       reason: d.reason.trim(),
-      exitPlan: d.exitPlan ?? {},
+      exitPlan: normalizeExitPlan(d.exitPlan),
     },
   };
 }

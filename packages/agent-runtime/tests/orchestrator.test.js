@@ -10,7 +10,8 @@ const silent = { info() {}, warn() {}, error() {} };
 let client, agentsRepo, opsRepo, eventsRepo;
 const TABLES = ['trigger_log', 'position_lots', 'fills', 'orders', 'trade_outcomes',
   'trades', 'positions', 'portfolio_snapshot', 'metrics_daily', 'event_log',
-  'indicator_snapshot', 'quote_tick', 'ohlcv_daily', 'session_state', 'agents', 'universe'];
+  'indicator_snapshot', 'quote_tick', 'ohlcv_daily', 'market_index_snapshot',
+  'session_state', 'agents', 'universe'];
 
 const agentDef = {
   id: 'a1', name: 'A1', provider: 'stub', model: 'stub',
@@ -37,6 +38,7 @@ beforeEach(async () => {
                       VALUES ('HOSE:FPT','2026-07-22', 99000, 101000, 98000, 100000, 1000000)`);
   await client.query(`INSERT INTO quote_tick (symbol, price, volume) VALUES ('HOSE:FPT', 100000, 5000)`);
   await client.query(`INSERT INTO indicator_snapshot (symbol, payload) VALUES ('HOSE:FPT', '{"rsi14":55}')`);
+  await client.query(`INSERT INTO market_index_snapshot (index_code, value, change_pct) VALUES ('VNINDEX', 1250.5, 0.8)`);
   await opsRepo.setSessionState('2026-07-23', 'DATA_READY', { dataCapturedAt: new Date() });
   await agentsRepo.upsertMany([agentDef]);
 });
@@ -144,6 +146,59 @@ test('phát sự kiện chuyển trạng thái theo đúng thứ tự', async ()
   const events = await eventsRepo.getEventsSince(0, 50);
   const states = events.filter(e => e.type === 'session.state').map(e => e.payload.state);
   assert.deepEqual(states, ['PRE_OPEN', 'OPEN', 'WATCHING', 'CLOSING', 'LEARNING', 'IDLE']);
+});
+
+test('đẩy chỉ số thị trường lên event feed ở PRE_OPEN', async () => {
+  const orch = createOrchestrator({ client, logger: silent });
+  await orch.runDay({
+    agentId: 'a1', agentDef, tradeDate: '2026-07-23', provider: buyThenHold(), ticks: [],
+  });
+
+  const events = await eventsRepo.getEventsSince(0, 50);
+  const snap = events.find(e => e.type === 'market.snapshot');
+  assert.ok(snap, 'phải có sự kiện market.snapshot');
+  assert.equal(snap.payload.indices[0].indexCode, 'VNINDEX');
+});
+
+test('hasOpenedToday/hasClosedToday theo dõi đúng vòng đời — watcher sống dựa vào đây để không mở/chốt trùng', async () => {
+  const orch = createOrchestrator({ client, logger: silent });
+
+  assert.equal(await orch.hasOpenedToday('a1', '2026-07-23'), false);
+  assert.equal(await orch.hasClosedToday('a1', '2026-07-23'), false);
+
+  await orch.openDay({
+    agentId: 'a1', agentDef, tradeDate: '2026-07-23', provider: buyThenHold(),
+    priceOverride: new Map([['HOSE:FPT', 100_000]]),
+  });
+  assert.equal(await orch.hasOpenedToday('a1', '2026-07-23'), true);
+  assert.equal(await orch.hasClosedToday('a1', '2026-07-23'), false);
+  // Ngày khác không được tính — mỗi ngày một vòng đời riêng.
+  assert.equal(await orch.hasOpenedToday('a1', '2026-07-24'), false);
+
+  const { refPriceMap } = await orch.buildWatchContext(buyThenHold());
+  await orch.closeDay({
+    agentId: 'a1', agentDef, tradeDate: '2026-07-23', provider: buyThenHold(),
+    priceMap: refPriceMap,
+  });
+  assert.equal(await orch.hasClosedToday('a1', '2026-07-23'), true);
+});
+
+test('firstTickPriceMap lấy đúng giá tick ĐẦU ngày, không phải tick mới nhất', async () => {
+  await client.query(`DELETE FROM quote_tick`);
+  await client.query(
+    `INSERT INTO quote_tick (symbol, price, ts) VALUES
+       ('HOSE:FPT', 100000, '2026-07-23T09:00:00+07:00'),
+       ('HOSE:FPT', 105000, '2026-07-23T09:05:00+07:00'),
+       ('HOSE:FPT', 110000, '2026-07-23T09:10:00+07:00')`,
+  );
+  const orch = createOrchestrator({ client, logger: silent });
+  const universe = [{ symbol: 'HOSE:FPT' }];
+
+  const first = await orch.firstTickPriceMap(universe, '2026-07-23');
+  assert.equal(first.get('HOSE:FPT'), 100_000);
+
+  const latest = await orch.latestTickPriceMap(universe);
+  assert.equal(latest.get('HOSE:FPT'), 110_000);
 });
 
 test('chạy lại cùng ngày không nhân đôi snapshot', async () => {

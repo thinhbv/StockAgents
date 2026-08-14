@@ -90,9 +90,19 @@ async function main() {
       ingest_prices: onTradingDayOnly('ingest_prices', () => runIngestPrices({ broker, repos })),
       // Phase 1 chưa có vị thế nên poll toàn universe.
       // Phase 3 sẽ thay bằng hợp nhất các mã đang giữ của 5 agent.
+      //
+      // watch_tick chạy NỐI TIẾP ngay sau, không phải job cron riêng — nó
+      // cần thấy đúng tick vừa ghi, đăng ký cron */5 riêng cho watch_tick sẽ
+      // đua với poll_quotes (thứ tự hai job cùng lịch không được đảm bảo).
+      // spawnTask() luôn được await nên poll_quotes chỉ coi là xong khi
+      // watch_tick cũng xong — scheduler vẫn chỉ thấy 1 "job" đang chạy.
       poll_quotes: async () => {
         const symbols = (await repos.universe.listActive()).map(s => s.symbol);
-        return runPollQuotes({ broker, repos, symbols });
+        const result = await runPollQuotes({ broker, repos, symbols });
+        if (!result.skipped) {
+          await spawnTask('watch:tick', ['--date', nowVnDate(), ...(cfg.simStub ? ['--stub'] : [])]);
+        }
+        return result;
       },
       prune_events: () => runPruneEvents({ repos, retentionDays: cfg.eventLogRetentionDays }),
 
@@ -101,15 +111,16 @@ async function main() {
         return runIngestNews({ repos, sources, indices: () => loadMarketIndices() });
       }),
 
-      // Chạy phiên và báo cáo nằm ở agent-runtime/api, không phải data-service.
-      // Gọi qua tiến trình con để giữ ranh giới: data-service chỉ biết dữ liệu,
-      // không biết agent nào đang giao dịch.
+      // Chốt sổ cuối phiên (mark-to-market + rút bài học) cho agent nào đã
+      // mở mà chưa chốt hôm nay — xem watch_tick ở trên cho việc mở/theo dõi.
+      // Gọi qua tiến trình con để giữ ranh giới: data-service chỉ biết dữ
+      // liệu, không biết agent nào đang giao dịch.
       //
       // --stub khi SIM_STUB=true: dùng cho lúc chưa có đủ API key cho mọi
       // provider — phiên tự động hằng ngày vẫn chạy trọn luồng (không tốn
       // token thật) cho tới khi tắt biến này.
-      run_session: onTradingDayOnly('run_session',
-        () => spawnTask('sim:all', ['--date', nowVnDate(), ...(cfg.simStub ? ['--stub'] : [])])),
+      watch_close: onTradingDayOnly('watch_close',
+        () => spawnTask('watch:close', ['--date', nowVnDate(), ...(cfg.simStub ? ['--stub'] : [])])),
       report_day: onTradingDayOnly('report_day',
         () => spawnTask('report:day', ['--date', nowVnDate()])),
     },

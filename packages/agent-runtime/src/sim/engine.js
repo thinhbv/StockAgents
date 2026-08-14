@@ -117,6 +117,7 @@ export function createEngine({ repos, logger = console, slippagePct = SLIPPAGE_P
       const g = checkBuy({
         symbol, costVnd: cost, cash: portfolio.cash, nav: portfolio.nav,
         positions: portfolio.positions, risk,
+        indicatorsMissing: ctx.indicatorsMissingSymbols?.has(symbol) ?? false,
       });
       if (!g.ok) return reject(agentId, orderId, g.reason);
 

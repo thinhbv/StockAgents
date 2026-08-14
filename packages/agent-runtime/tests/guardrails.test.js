@@ -6,7 +6,7 @@ const NAV = 1_000_000_000;
 const pos = (symbol, qtyTotal, qtySellable = qtyTotal) => ({ symbol, qtyTotal, qtySellable });
 
 test('giá trị rủi ro mặc định đúng spec §7.2', () => {
-  assert.deepEqual({ ...DEFAULT_RISK }, { maxPositions: 8, maxPositionPctNav: 20, dailyLossLimitPct: 5 });
+  assert.deepEqual({ ...DEFAULT_RISK }, { maxPositionPctNav: 20, dailyLossLimitPct: 5 });
 });
 
 test('checkBuy cho qua khi mọi giới hạn thoả', () => {
@@ -26,17 +26,20 @@ test('checkBuy chặn khi vượt tỷ trọng tối đa một mã', () => {
   assert.match(r.reason, /tỷ trọng/);
 });
 
-test('checkBuy chặn khi đã đủ số vị thế tối đa', () => {
-  const positions = Array.from({ length: 8 }, (_, i) => pos(`HOSE:S${i}`, 100));
+test('checkBuy KHÔNG giới hạn số loại mã đang giữ — agent tự quyết định dàn trải', () => {
+  // 20 mã khác nhau, mỗi lệnh nhỏ để không chạm trần tỷ trọng/mã hay tiền mặt.
+  const positions = Array.from({ length: 20 }, (_, i) => pos(`HOSE:S${i}`, 100));
   const r = checkBuy({ symbol: 'HOSE:NEW', costVnd: 10_000_000, cash: NAV, nav: NAV, positions, risk: DEFAULT_RISK });
-  assert.equal(r.ok, false);
-  assert.match(r.reason, /số vị thế/);
+  assert.equal(r.ok, true, 'không có hàng rào số vị thế — tiền mặt và tỷ trọng/mã mới là hàng rào thật');
 });
 
-test('checkBuy CHO PHÉP mua thêm mã đã có dù đủ số vị thế', () => {
-  const positions = Array.from({ length: 8 }, (_, i) => pos(`HOSE:S${i}`, 100));
-  const r = checkBuy({ symbol: 'HOSE:S0', costVnd: 10_000_000, cash: NAV, nav: NAV, positions, risk: DEFAULT_RISK });
-  assert.equal(r.ok, true, 'mua thêm mã đang giữ không tạo vị thế mới');
+test('checkBuy chặn khi thiếu chỉ báo kỹ thuật cho mã, dù mọi giới hạn khác thoả', () => {
+  const r = checkBuy({
+    symbol: 'HOSE:FPT', costVnd: 100_000_000, cash: 500_000_000, nav: NAV,
+    positions: [], risk: DEFAULT_RISK, indicatorsMissing: true,
+  });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /chỉ báo/);
 });
 
 test('checkSell chặn khi không có vị thế', () => {

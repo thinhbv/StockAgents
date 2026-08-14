@@ -112,11 +112,16 @@ export function createFakeCore({
         // Mirrors tradingview_mcp/src/core/data.js:245 getQuote — no `price`
         // field on the real response; `last` and `close` come from the same
         // bar value, and it throws if neither is present.
+        // Giá lệch theo TỪNG mã (không hằng số) — một fake trả cùng giá cho
+        // mọi mã sẽ không bao giờ bắt được bug thật đã xảy ra: CDP đọc dính
+        // giá cũ, nhiều mã khác nhau cùng ra một con số trong một lượt poll.
+        const s = String(currentSymbol ?? '');
+        const base = 100 + (s.charCodeAt(s.length - 1) % 50);
         return {
           success: true,
           symbol: currentSymbol,
           time: 1784678400,
-          open: 108, high: 112, low: 107, close: 111, last: 111,
+          open: base - 3, high: base + 4, low: base - 4, close: base, last: base,
           volume: 500,
         };
       },

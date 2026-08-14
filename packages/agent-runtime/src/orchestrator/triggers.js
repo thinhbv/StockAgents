@@ -89,3 +89,43 @@ export function isDebounced({ lastFiredAt, now, minutes = DEBOUNCE_MINUTES }) {
   const elapsedMs = now.getTime() - new Date(lastFiredAt).getTime();
   return elapsedMs < minutes * 60_000;
 }
+
+// Ngưỡng biến động đủ mạnh để đáng chú ý trên một mã CHƯA giữ — không phải
+// ngưỡng vào lệnh, chỉ là "đáng nhìn". Biên độ HOSE ±7% nên 5% đã là dịch
+// chuyển thật, không phải nhiễu quanh tham chiếu.
+export const UNIVERSE_MOVE_THRESHOLD_PCT = 5;
+
+/**
+ * Rà universe cho các mã KHÔNG nằm trong vị thế đang giữ — vị thế đang giữ đã
+ * có evaluateTriggers() lo. Đây là nửa còn lại của watchdog: mã chưa mua biến
+ * động mạnh hoặc dính tin xấu thì trước đây không ai biết cho tới phiên sau.
+ *
+ * HÀM THUẦN như evaluateTriggers — không gọi LLM. Watchdog chỉ GHI LẠI các
+ * alert này để hiện lên dashboard; không tự đánh thức agent để cân nhắc mua,
+ * vì watchdog không có đủ ngữ cảnh (chỉ báo, khối lượng) để agent không mua mù.
+ */
+export function evaluateUniverseAlerts({
+  symbols, tickPriceMap, refPriceMap, newsSentimentMap,
+  moveThresholdPct = UNIVERSE_MOVE_THRESHOLD_PCT,
+}) {
+  const fired = [];
+  for (const symbol of symbols) {
+    const lastPriceVnd = tickPriceMap.get(symbol);
+    const refPriceVnd = refPriceMap.get(symbol);
+    if (Number.isFinite(lastPriceVnd) && Number.isFinite(refPriceVnd) && refPriceVnd > 0) {
+      const changePct = Math.round(((lastPriceVnd - refPriceVnd) / refPriceVnd) * 10000) / 100;
+      if (Math.abs(changePct) >= moveThresholdPct) {
+        fired.push({
+          type: 'PRICE_MOVE', symbol, changePct,
+          reason: `giá ${changePct > 0 ? 'tăng' : 'giảm'} ${Math.abs(changePct)}% so với tham chiếu`,
+        });
+      }
+    }
+
+    const sentiment = newsSentimentMap?.get(symbol);
+    if (Number.isFinite(sentiment) && sentiment <= NEWS_ALERT_THRESHOLD) {
+      fired.push({ type: 'NEWS_ALERT', symbol, sentiment, reason: `tin tiêu cực mạnh (sentiment ${sentiment})` });
+    }
+  }
+  return fired;
+}

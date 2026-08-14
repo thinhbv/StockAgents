@@ -160,12 +160,14 @@ export function createTradingRepo(client) {
   async function listOutcomes(agentId, limit = 500) {
     const id = assertAgentScope(agentId, 'listOutcomes');
     const { rows } = await client.query(
-      `SELECT trade_id AS "entryTradeId", exit_trade_id AS "exitTradeId", symbol, qty,
-              entry_price AS "entryPriceVnd", exit_price AS "exitPriceVnd",
-              pnl, pnl_pct AS "pnlPct", holding_days AS "holdingDays", closed_at AS "closedAt"
-       FROM trade_outcomes WHERE agent_id = $1 ORDER BY closed_at DESC LIMIT $2`, [id, limit]);
+      `SELECT o.trade_id AS "entryTradeId", o.exit_trade_id AS "exitTradeId", o.symbol, o.qty,
+              o.entry_price AS "entryPriceVnd", o.exit_price AS "exitPriceVnd",
+              o.pnl, o.pnl_pct AS "pnlPct", o.holding_days AS "holdingDays", o.closed_at AS "closedAt",
+              t.confidence AS "entryConfidence"
+       FROM trade_outcomes o JOIN trades t ON t.id = o.trade_id
+       WHERE o.agent_id = $1 ORDER BY o.closed_at DESC LIMIT $2`, [id, limit]);
     return rows.map(r => ({
-      ...r, pnl: num(r.pnl), pnlPct: num(r.pnlPct),
+      ...r, pnl: num(r.pnl), pnlPct: num(r.pnlPct), entryConfidence: num(r.entryConfidence),
       entryPriceVnd: num(r.entryPriceVnd), exitPriceVnd: num(r.exitPriceVnd),
     }));
   }

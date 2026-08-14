@@ -88,10 +88,35 @@ test('collectQuotes gom tick và tách riêng lỗi từng mã', async () => {
 
   assert.deepEqual(ticks.map(t => t.symbol), ['HOSE:A', 'HOSE:C']);
   // Giá lấy từ `last` của quote thật, không phải trường `price` (không tồn tại)
-  assert.equal(ticks[0].price, 111);
+  assert.equal(ticks[0].price, 115);
   assert.ok(Number.isFinite(ticks[0].price), 'không được là NaN');
   assert.equal(errors.length, 1);
   assert.equal(errors[0].symbol, 'HOSE:B');
+});
+
+test('collectQuotes loại bỏ tick khi nhiều mã cùng ra một giá — nghi CDP chưa refresh panel', async () => {
+  // Tái hiện sự cố thật ngoài đời: chart đã chuyển đúng mã (waitForSymbol qua,
+  // q.symbol khớp) nhưng panel giá vẫn trả giá của lượt đọc trước, khiến nhiều
+  // mã khác nhau cùng ra một con số.
+  const core = createFakeCore();
+  core.data.getQuote = async () => ({
+    success: true, symbol: core.currentSymbol, time: 1784678400,
+    open: 22190, high: 22210, low: 22190, close: 22200, last: 22200, volume: 500,
+  });
+  const broker = createBroker({ core, logger: silent, sleep: noSleep });
+
+  const { ticks, errors } = await collectQuotes(broker, ['HOSE:A', 'HOSE:B', 'HOSE:C']);
+
+  assert.deepEqual(ticks, []);
+  assert.equal(errors.length, 3);
+  assert.ok(errors.every(e => /trùng/.test(e.message)));
+});
+
+test('collectQuotes không đụng tick khi giá thật sự khác nhau', async () => {
+  const { ticks, errors } = await collectQuotes(makeBroker(), ['HOSE:A', 'HOSE:B', 'HOSE:C']);
+  assert.equal(ticks.length, 3);
+  assert.equal(errors.length, 0);
+  assert.equal(new Set(ticks.map(t => t.price)).size, 3, 'ba mã phải ra ba giá khác nhau');
 });
 
 test('collectQuotes với danh sách rỗng trả về kết quả rỗng, không chạm CDP', async () => {

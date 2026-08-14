@@ -13,4 +13,5 @@ export const EVENTS = Object.freeze({
   TRIGGER_FIRED: 'trigger.fired',
   POSITION_MARKED: 'position.marked',
   METRICS_UPDATED: 'metrics.updated',
+  MARKET_SNAPSHOT: 'market.snapshot',
 });

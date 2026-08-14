@@ -116,9 +116,19 @@ export function createMarketRepo(client) {
     return rows.map(r => ({ ...r, value: Number(r.value), changePct: num(r.changePct) }));
   }
 
+  async function getLatestPrices(symbols) {
+    const map = new Map();
+    if (!symbols || symbols.length === 0) return map;
+    const { rows } = await client.query(
+      `SELECT DISTINCT ON (symbol) symbol, price FROM quote_tick
+       WHERE symbol = ANY($1) ORDER BY symbol, ts DESC`, [symbols]);
+    for (const r of rows) map.set(r.symbol, Number(r.price));
+    return map;
+  }
+
   return {
     insertIndexSnapshots, getLatestIndices,
     upsertOhlcvBars, getLatestBar, insertIndicatorSnapshot,
-    getLatestIndicatorAgeMinutes, insertQuoteTicks,
+    getLatestIndicatorAgeMinutes, insertQuoteTicks, getLatestPrices,
   };
 }

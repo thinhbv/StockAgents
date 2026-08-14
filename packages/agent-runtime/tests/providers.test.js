@@ -169,10 +169,16 @@ test('config có đủ năm agent, id không trùng', async () => {
   assert.equal(new Set(defs.map(d => d.id)).size, 5);
 });
 
-test('mỗi agent có persona riêng và đủ chi tiết để tạo khác biệt', async () => {
+// Cố ý CHUNG một persona "nhà đầu tư chuyên nghiệp tự lý luận", không gán
+// sẵn trường phái (giá trị/xu hướng/tin tức/định lượng/ngược dòng) hay ngưỡng
+// số cứng (% cắt lỗ, RSI...). Khác biệt hành vi giữa 5 agent giờ chỉ còn đến
+// từ MODEL đứng sau (provider/model), không phải từ kịch bản chiến lược viết
+// sẵn — quyết định thiết kế có chủ đích, không phải thiếu sót.
+test('mọi agent chia sẻ cùng một persona "tự lý luận", đủ chi tiết để định hình hành vi', async () => {
   const defs = await loadAgentDefs();
   const personas = defs.map(d => d.personaPrompt);
-  assert.equal(new Set(personas).size, 5, 'không agent nào được dùng chung persona');
+  assert.equal(new Set(personas).size, 1,
+    'persona phải giống hệt nhau — khác biệt agent đến từ model, không phải kịch bản chiến lược viết sẵn');
   for (const d of defs) {
     assert.ok(d.personaPrompt.length > 200, `${d.id}: persona quá ngắn để định hình hành vi`);
     assert.match(d.personaPrompt, /VND/, `${d.id}: persona phải nói rõ đơn vị giá`);

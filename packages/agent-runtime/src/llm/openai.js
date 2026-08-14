@@ -10,7 +10,10 @@ const API_URL = 'https://api.openai.com/v1/chat/completions';
 export function createOpenAiProvider({ apiKey, model, fetchImpl = fetch, apiUrl = API_URL }) {
   return {
     name: 'openai',
-    async complete({ system, messages, jsonSchema, maxTokens = 2048, temperature = 1 }) {
+    // 4096, không phải 2048 mặc định cũ — xem lý do trong anthropic.js: agent
+    // giờ có thể ra 8-10 quyết định/phiên từ khi bỏ trần số vị thế, và JSON
+    // dài bị cắt giữa chừng sẽ để lại phần tử rỗng ở cuối mảng `decisions`.
+    async complete({ system, messages, jsonSchema, maxTokens = 4096, temperature = 1 }) {
       const res = await fetchImpl(apiUrl, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },

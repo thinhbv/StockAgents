@@ -2,7 +2,7 @@ import http from 'node:http';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   createClient, createAgentsRepo, createTradingRepo,
-  createOpsRepo, createEventsRepo, createLessonsRepo,
+  createOpsRepo, createEventsRepo, createLessonsRepo, createMarketRepo,
 } from '@stockagents/db';
 import { loadApiConfig } from './config.js';
 import { createRouter } from './router.js';
@@ -29,7 +29,7 @@ export function createServer({ config, logger = console }) {
   const repos = {
     agents: createAgentsRepo(client), trading: createTradingRepo(client),
     ops: createOpsRepo(client), events: createEventsRepo(client),
-    lessons: createLessonsRepo(client),
+    lessons: createLessonsRepo(client), market: createMarketRepo(client),
   };
   const routes = createRoutes({ client, repos });
   const hub = createSseHub({ eventsRepo: repos.events });

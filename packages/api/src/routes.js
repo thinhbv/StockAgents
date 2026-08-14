@@ -86,7 +86,18 @@ export function createRoutes({
   }
 
   async function positions({ params }) {
-    return { agentId: params.id, positions: await repos.trading.getOpenPositions(params.id) };
+    const list = await repos.trading.getOpenPositions(params.id);
+    const priceMap = await repos.market.getLatestPrices(list.map(p => p.symbol));
+    return {
+      agentId: params.id,
+      positions: list.map(p => {
+        const lastPriceVnd = priceMap.get(p.symbol) ?? p.avgCostVnd;
+        const unrealizedPct = p.avgCostVnd > 0
+          ? Math.round(((lastPriceVnd - p.avgCostVnd) / p.avgCostVnd) * 10000) / 100
+          : 0;
+        return { ...p, lastPriceVnd, unrealizedPct };
+      }),
+    };
   }
 
   async function decisions({ params, query = {} }) {
@@ -131,7 +142,8 @@ export function createRoutes({
     const { rows: mrows } = await client.query(
       `SELECT snap_date AS "snapDate", total_return_pct AS "totalReturnPct",
               win_rate AS "winRate", sharpe, max_drawdown AS "maxDrawdown",
-              avg_holding_days AS "avgHoldingDays", trade_count AS "tradeCount"
+              avg_holding_days AS "avgHoldingDays", trade_count AS "tradeCount",
+              confidence_calibration AS "confidenceCalibration"
        FROM metrics_daily WHERE agent_id = $1
        ORDER BY snap_date DESC LIMIT 1`, [params.id]);
 
@@ -150,6 +162,7 @@ export function createRoutes({
         snapDate: m.snapDate, totalReturnPct: n(m.totalReturnPct),
         winRate: n(m.winRate), sharpe: n(m.sharpe), maxDrawdown: n(m.maxDrawdown),
         avgHoldingDays: n(m.avgHoldingDays), tradeCount: m.tradeCount,
+        confidenceCalibration: n(m.confidenceCalibration),
       } : null,
     };
   }

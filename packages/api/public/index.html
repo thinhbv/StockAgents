@@ -16,7 +16,7 @@
 
   <dl class="head-stats">
     <div class="stat"><dt>Phiên</dt><dd id="session-state" class="tag tag-unknown">—</dd></div>
-    <div class="stat"><dt>Dữ liệu</dt><dd id="data-freshness" class="tag tag-unknown">—</dd></div>
+    <div class="stat"><dt>Chỉ báo KT</dt><dd id="data-freshness" class="tag tag-unknown">—</dd></div>
     <div class="stat"><dt>Kết nối</dt><dd id="stream-state" class="tag tag-unknown">đang nối</dd></div>
     <div class="stat"><dt>Giờ VN</dt><dd id="clock" class="figure">--:--:--</dd></div>
   </dl>
@@ -32,11 +32,11 @@
         <tr>
           <th scope="col" class="col-agent">Agent</th>
           <th scope="col" class="col-model">Model</th>
-          <th scope="col" class="num">NAV</th>
-          <th scope="col" class="num">Lãi/lỗ</th>
-          <th scope="col" class="num">Hôm nay</th>
-          <th scope="col" class="num">Tiền mặt</th>
-          <th scope="col" class="num">Vị thế</th>
+          <th scope="col" class="num">Tổng tài sản</th>
+          <th scope="col" class="num">Lãi/lỗ (%)</th>
+          <th scope="col" class="num">Lãi/lỗ hôm nay (VNĐ)</th>
+          <th scope="col" class="num">Số dư</th>
+          <th scope="col" class="num">Đang giữ</th>
         </tr>
       </thead>
       <tbody id="board-body">
@@ -47,7 +47,10 @@
     <div id="detail" class="detail" hidden>
       <div class="detail-head">
         <h3 id="detail-name">—</h3>
-        <p id="detail-persona" class="persona"></p>
+        <details class="persona-toggle">
+          <summary>Xem chi tiết tính cách AI</summary>
+          <p id="detail-persona" class="persona"></p>
+        </details>
 
         <div class="agent-config">
           <button id="config-edit-btn" type="button" class="config-edit-btn">Sửa AI/model</button>
@@ -67,7 +70,7 @@
 
       <section class="navchart" aria-labelledby="nav-title">
         <div class="navchart-head">
-          <h4 id="nav-title" class="eyebrow">Đường NAV</h4>
+          <h4 id="nav-title" class="eyebrow">Đường tổng tài sản</h4>
           <dl id="nav-metrics" class="nav-metrics"></dl>
         </div>
         <div id="nav-plot" class="nav-plot"></div>

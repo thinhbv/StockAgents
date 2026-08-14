@@ -55,6 +55,25 @@ export function avgHoldingDays(outcomes) {
   return Math.round((total / outcomes.length) * 100) / 100;
 }
 
+/**
+ * Chênh lệch confidence trung bình giữa vòng THẮNG và vòng THUA — đo hiệu
+ * chuẩn (calibration), không phải độ chính xác. Mọi agent đều bắt buộc khai
+ * confidence 0..1 trên mỗi quyết định (decision_schema.js), nên đây là thước
+ * đo dùng chung được ngay, không cần đổi persona prompt của agent nào.
+ *
+ * Dương: agent tự tin đúng lúc hơn lúc sai. Âm: càng tự tin càng dễ sai —
+ * dấu hiệu overconfidence. null khi chưa có đủ cả vòng thắng lẫn vòng thua
+ * để so sánh.
+ */
+export function confidenceCalibration(outcomes) {
+  const avg = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const withConfidence = outcomes.filter(o => Number.isFinite(o.entryConfidence));
+  const wins = withConfidence.filter(o => o.pnl > 0).map(o => o.entryConfidence);
+  const losses = withConfidence.filter(o => o.pnl <= 0).map(o => o.entryConfidence);
+  if (wins.length === 0 || losses.length === 0) return null;
+  return Math.round((avg(wins) - avg(losses)) * 10000) / 10000;
+}
+
 /** Tỷ lệ bài học thực sự giúp được, trên toàn bộ lần được truy xuất. */
 export function lessonHitRate(lessons) {
   const retrieved = lessons.reduce((a, l) => a + (l.timesRetrieved ?? 0), 0);
@@ -96,6 +115,7 @@ export async function computeAndSaveMetrics({ repos, agentId, tradeDate }) {
     avgHoldingDays: avgHoldingDays(outcomes),
     tradeCount: outcomes.length,
     lessonHitRate: lessonHitRate(lessons),
+    confidenceCalibration: confidenceCalibration(outcomes),
   };
 
   await repos.agents.saveMetrics(agentId, tradeDate, metrics);

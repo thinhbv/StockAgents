@@ -6,6 +6,9 @@ Không kết nối tới môi giới thật, không đặt lệnh bằng tiền 
 **→ [Hướng dẫn sử dụng](docs/huong-dan-su-dung.md)** — cài đặt, chạy hằng ngày,
 đọc dashboard, xử lý sự cố. Bắt đầu từ đây nếu bạn muốn *dùng* hệ thống.
 
+**→ [Thiết kế database](docs/thiet-ke-database.md)** — 22 bảng, quan hệ giữa
+chúng, và vì sao mỗi bảng có hình dạng như vậy.
+
 README này giải thích *vì sao* từng phần được làm như vậy.
 
 Thiết kế: [docs/superpowers/specs/2026-07-26-ai-trading-agents-design.md](docs/superpowers/specs/2026-07-26-ai-trading-agents-design.md)
@@ -81,8 +84,9 @@ chart có RSI nhưng `getStudyValues()` chỉ trả `["Volume"]`.
 **Luật đã mô phỏng:** T+2.5 theo từng lô, lô chẵn 100, biên độ ±7%/±10%/±15%,
 bước giá ba bậc, phí 0,15%, thuế bán 0,1%, trượt giá 0,1% theo hướng bất lợi.
 
-**Hàng rào cứng** (ngoài tầm với của LLM): tối đa 8 vị thế, tối đa 20% NAV một
-mã, không đòn bẩy, không bán khống, dừng giao dịch khi lỗ ngày vượt 5% NAV.
+**Hàng rào cứng** (ngoài tầm với của LLM): tối đa 20% NAV một mã, không đòn
+bẩy, không bán khống, dừng giao dịch khi lỗ ngày vượt 5% NAV. Không giới hạn
+số loại mã đang giữ — agent tự quyết định dàn trải bao nhiêu mã.
 
 **Trạng thái phiên:** `DATA_READY` / `DATA_PARTIAL` / `DATA_STALE`. Chỉ
 `DATA_READY` mới làm mới `data_captured_at`.
@@ -99,16 +103,30 @@ npm run sim:day -- --agent claude_value --date 2026-07-29 --stub
 học mỗi nhịp tick — **không gọi LLM**. Chỉ khi chạm ngưỡng mới đánh thức agent,
 nên chi phí token tỉ lệ với số *sự kiện*, không phải số *phút*.
 
-| Trigger | Điều kiện |
-|---|---|
-| `TAKE_PROFIT` | lãi chạm `takeProfitPct` |
-| `STOP_LOSS` | lỗ chạm `stopLossPct` |
-| `TRAILING` | tụt `trailingPct` từ **đỉnh** kể từ lúc mua |
-| `TIME_STOP` | giữ đủ `timeStopDays` phiên |
-| `NEWS_ALERT` | sentiment tin ≤ −0,5 |
-| `EOD_REVIEW` | từ 14:30 giờ VN |
+| Trigger | Điều kiện | Khi nổ |
+|---|---|---|
+| `STOP_LOSS` | lỗ chạm `stopLossPct` | **Tự động bán ngay** qua engine, không hỏi LLM |
+| `TRAILING` | tụt `trailingPct` từ **đỉnh** kể từ lúc mua | **Tự động bán ngay** qua engine, không hỏi LLM |
+| `TAKE_PROFIT` | lãi chạm `takeProfitPct` | Đánh thức agent, LLM tự quyết (bán/giữ/đổi kế hoạch) |
+| `TIME_STOP` | giữ đủ `timeStopDays` phiên | Đánh thức agent |
+| `NEWS_ALERT` | sentiment tin ≤ −0,5 | Đánh thức agent |
+| `EOD_REVIEW` | từ 14:30 giờ VN | Đánh thức agent |
+
+`STOP_LOSS`/`TRAILING` là ngưỡng **bảo vệ vốn** — chờ LLM cân nhắc lại đúng lúc
+giá đang rơi là mất thêm tiền (dù là tiền giả lập), nên bán thẳng qua
+`engine.submit()` (packages/agent-runtime/src/orchestrator/watchdog.js). Các
+trigger còn lại là lúc *có thể* đáng cân nhắc tiếp, quyết định vẫn thuộc về
+agent — đây mới là phần hệ thống sinh ra để so sánh.
 
 Mỗi vị thế chịu chống rung 30 phút cho **cùng** loại trigger.
+
+**Theo dõi liên tục trong giờ, không phải chỉ 1 lần đầu ngày.** `sim:day`/
+`sim:all` là replay theo lô (nạp sẵn tick rồi chạy 1 lượt, dùng để xem lại/test
+tay). Chạy tự động thật (`data-service`) dùng `watch:tick` — gọi lại mỗi 5
+phút ngay sau `poll_quotes`, mở phiên nếu agent chưa mở rồi watchdog tick đúng
+1 lần với giá mới nhất — và `watch:close` lúc 14:58 để chốt sổ. Nhờ vậy một vị
+thế chạm cắt lỗ lúc 10 giờ sáng được xử lý trong vòng 5 phút, không phải đợi
+tới cuối ngày.
 
 **Cổng dữ liệu:** phiên chỉ mở khi `session_state` là `DATA_READY` hoặc
 `DATA_PARTIAL`. `DATA_STALE` thì không mở — thà không giao dịch còn hơn
@@ -146,13 +164,21 @@ xanh lơ = sàn/cắt lỗ, vàng = tham chiếu, xanh = tăng, đỏ = giảm.
 npm run sim:all -- --date 2026-07-29 --stub
 ```
 
-| Agent | Model | Phong cách |
-|---|---|---|
-| `claude_value` | Claude Opus | Giá trị, giữ dài, stop rộng |
-| `gpt_momentum` | GPT | Xu hướng, cắt lỗ nhanh, trailing |
-| `gemini_news` | Gemini | Tin tức, giữ ngắn |
-| `deepseek_quant` | DeepSeek | Chỉ dùng số, ngưỡng theo ATR |
-| `claude_contrarian` | Claude Sonnet | Ngược dòng, mua vùng quá bán |
+| Agent | Model |
+|---|---|
+| `claude_value` | Claude Opus |
+| `gpt_momentum` | GPT |
+| `gemini_news` | Gemini |
+| `deepseek_quant` | DeepSeek |
+| `claude_contrarian` | Claude Sonnet |
+
+Cả 5 agent dùng **chung một persona** "nhà đầu tư chuyên nghiệp tự lý luận" —
+không gán sẵn trường phái (giá trị/xu hướng/tin tức/định lượng/ngược dòng) hay
+ngưỡng số cứng (% cắt lỗ, RSI...). Agent tự đọc dữ liệu context và tự quyết
+định chiến lược, quy mô vị thế, điểm cắt lỗ/chốt lời cho từng tình huống —
+giống một trader thật tự chịu trách nhiệm với vốn của mình. Khác biệt hành vi
+giữa 5 agent vì vậy chỉ còn đến từ **model** đứng sau, không phải từ kịch bản
+chiến lược viết sẵn trong `config/agents.json`.
 
 Bỏ `--stub` để chạy với model thật — cần `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `GEMINI_API_KEY`, `DEEPSEEK_API_KEY` trong `.env`. Thiếu key nào, CLI nói rõ

@@ -34,5 +34,30 @@ export async function collectQuotes(broker, symbols) {
     }
   }
 
-  return { ticks, errors };
+  // ponytail: nhiều mã VN30 khác nhau ra CÙNG một giá trong một lượt poll là
+  // gần như không thể thật — đã thấy thật ngoài đời (12 mã cùng ra 22.200đ
+  // một lúc, ts=2026-08-14T06:00:26Z): waitForSymbol/so khớp q.symbol đều qua,
+  // nhưng panel giá của CDP chưa kịp refresh nên trả giá của lượt đọc trước.
+  // Ngưỡng ≥2 mã trùng giá là đủ nghi ngờ để không tin — nếu sau này có coincidence
+  // thật (hai mã giá tham chiếu giống hệt nhau), nâng ngưỡng lên thay vì bỏ hẳn.
+  const byPrice = new Map();
+  for (const t of ticks) {
+    if (!byPrice.has(t.price)) byPrice.set(t.price, []);
+    byPrice.get(t.price).push(t);
+  }
+  const clean = [];
+  for (const group of byPrice.values()) {
+    if (group.length >= 2) {
+      for (const t of group) {
+        errors.push({
+          symbol: t.symbol,
+          message: `collectQuotes: giá ${t.price} trùng với ${group.length - 1} mã khác cùng lượt poll — nghi CDP chưa refresh, bỏ qua`,
+        });
+      }
+    } else {
+      clean.push(...group);
+    }
+  }
+
+  return { ticks: clean, errors };
 }

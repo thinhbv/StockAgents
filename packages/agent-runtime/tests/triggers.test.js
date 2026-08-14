@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TRIGGER_TYPES, DEBOUNCE_MINUTES, evaluateTriggers, isDebounced,
+  evaluateUniverseAlerts, UNIVERSE_MOVE_THRESHOLD_PCT,
 } from '../src/orchestrator/triggers.js';
 
 const pos = (over = {}) => ({
@@ -122,4 +123,50 @@ test('isDebounced chặn lần nổ thứ hai trong 30 phút', () => {
 
 test('isDebounced cho qua khi chưa từng nổ', () => {
   assert.equal(isDebounced({ lastFiredAt: null, now: NOW, minutes: 30 }), false);
+});
+
+test('evaluateUniverseAlerts: PRICE_MOVE nổ khi mã chưa giữ tăng/giảm mạnh so với tham chiếu', () => {
+  const t = evaluateUniverseAlerts({
+    symbols: ['HOSE:VNM'],
+    tickPriceMap: new Map([['HOSE:VNM', 106_000]]),
+    refPriceMap: new Map([['HOSE:VNM', 100_000]]),
+    newsSentimentMap: new Map(),
+  });
+  assert.equal(t.length, 1);
+  assert.equal(t[0].type, 'PRICE_MOVE');
+  assert.equal(t[0].changePct, 6);
+});
+
+test('evaluateUniverseAlerts: không nổ khi biến động dưới ngưỡng', () => {
+  const t = evaluateUniverseAlerts({
+    symbols: ['HOSE:VNM'],
+    tickPriceMap: new Map([['HOSE:VNM', 103_000]]),
+    refPriceMap: new Map([['HOSE:VNM', 100_000]]),
+    newsSentimentMap: new Map(),
+  });
+  assert.deepEqual(t, []);
+});
+
+test('evaluateUniverseAlerts: NEWS_ALERT nổ với tin rất xấu dù giá đứng yên', () => {
+  const t = evaluateUniverseAlerts({
+    symbols: ['HOSE:VNM'],
+    tickPriceMap: new Map([['HOSE:VNM', 100_000]]),
+    refPriceMap: new Map([['HOSE:VNM', 100_000]]),
+    newsSentimentMap: new Map([['HOSE:VNM', -0.9]]),
+  });
+  assert.ok(t.some(x => x.type === 'NEWS_ALERT'));
+});
+
+test('evaluateUniverseAlerts: thiếu giá tham chiếu thì bỏ qua mã đó, không đoán bừa', () => {
+  const t = evaluateUniverseAlerts({
+    symbols: ['HOSE:VNM'],
+    tickPriceMap: new Map([['HOSE:VNM', 200_000]]),
+    refPriceMap: new Map(),
+    newsSentimentMap: new Map(),
+  });
+  assert.deepEqual(t, []);
+});
+
+test('UNIVERSE_MOVE_THRESHOLD_PCT mặc định là 5', () => {
+  assert.equal(UNIVERSE_MOVE_THRESHOLD_PCT, 5);
 });

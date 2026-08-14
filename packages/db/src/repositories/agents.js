@@ -125,14 +125,15 @@ export function createAgentsRepo(client) {
     await client.query(
       `INSERT INTO metrics_daily
          (agent_id, snap_date, total_return_pct, win_rate, sharpe,
-          max_drawdown, avg_holding_days, trade_count)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+          max_drawdown, avg_holding_days, trade_count, confidence_calibration)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT (agent_id, snap_date) DO UPDATE SET
          total_return_pct = EXCLUDED.total_return_pct, win_rate = EXCLUDED.win_rate,
          sharpe = EXCLUDED.sharpe, max_drawdown = EXCLUDED.max_drawdown,
-         avg_holding_days = EXCLUDED.avg_holding_days, trade_count = EXCLUDED.trade_count`,
+         avg_holding_days = EXCLUDED.avg_holding_days, trade_count = EXCLUDED.trade_count,
+         confidence_calibration = EXCLUDED.confidence_calibration`,
       [id, snapDate, m.totalReturnPct, m.winRate, m.sharpe,
-       m.maxDrawdown, m.avgHoldingDays, m.tradeCount]);
+       m.maxDrawdown, m.avgHoldingDays, m.tradeCount, m.confidenceCalibration]);
   }
 
   async function getMetrics(agentId, snapDate) {
@@ -140,14 +141,14 @@ export function createAgentsRepo(client) {
     const { rows } = await client.query(
       `SELECT total_return_pct AS "totalReturnPct", win_rate AS "winRate", sharpe,
               max_drawdown AS "maxDrawdown", avg_holding_days AS "avgHoldingDays",
-              trade_count AS "tradeCount"
+              trade_count AS "tradeCount", confidence_calibration AS "confidenceCalibration"
        FROM metrics_daily WHERE agent_id = $1 AND snap_date = $2`, [id, snapDate]);
     if (!rows[0]) return null;
     const r = rows[0];
     return {
       totalReturnPct: num(r.totalReturnPct), winRate: num(r.winRate), sharpe: num(r.sharpe),
       maxDrawdown: num(r.maxDrawdown), avgHoldingDays: num(r.avgHoldingDays),
-      tradeCount: r.tradeCount,
+      tradeCount: r.tradeCount, confidenceCalibration: num(r.confidenceCalibration),
     };
   }
 

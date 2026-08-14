@@ -5,11 +5,16 @@ const TZ = 'Asia/Ho_Chi_Minh';
 export const SCHEDULES = [
   { name: 'ingest_prices', cron: '30 8 * * 1-5' },
   { name: 'ingest_news', cron: '45 8 * * 1-5' },
-  // 09:15 mở cửa — chạy cả 5 agent trên cùng dữ liệu.
-  { name: 'run_session', cron: '15 9 * * 1-5' },
+  // poll_quotes lấy tick MỚI xong thì watch_tick theo dõi ngay tick đó — mở
+  // phiên nếu agent chưa mở, rồi watchdog tick 1 lần. Không đăng ký cron
+  // riêng: chạy NỐI TIẾP sau poll_quotes trong data-service/index.js để đảm
+  // bảo luôn thấy tick vừa ghi, tránh race giữa hai job cùng lịch */5.
+  { name: 'poll_quotes', cron: '*/5 9-14 * * 1-5' },
+  // 14:58 — trước report_day 2 phút, sau lượt poll_quotes cuối (14:55) —
+  // chốt sổ cho agent nào đã mở mà chưa chốt.
+  { name: 'watch_close', cron: '58 14 * * 1-5' },
   // 15:00 — sau khi sàn đóng và mọi phiên đã chốt.
   { name: 'report_day', cron: '0 15 * * 1-5' },
-  { name: 'poll_quotes', cron: '*/5 9-14 * * 1-5' },
   { name: 'prune_events', cron: '0 2 * * *' },
 ];
 

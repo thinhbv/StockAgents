@@ -1,7 +1,9 @@
 # Hướng dẫn sử dụng StockAgents
 
 Năm agent AI cùng giao dịch chứng khoán Việt Nam trên **tiền giả lập**, mỗi
-agent một model và một phong cách khác nhau, để xem lối nghĩ nào hiệu quả hơn.
+agent một model LLM khác nhau nhưng dùng chung một persona "nhà đầu tư chuyên
+nghiệp tự lý luận" (không gán sẵn trường phái hay ngưỡng số cứng), để xem
+model nào tự nghĩ ra chiến lược hiệu quả hơn.
 
 > **Không có tiền thật ở đâu trong hệ thống này.** Không kết nối môi giới,
 > không API đặt lệnh. Mọi lệnh mua bán kết thúc ở một dòng `INSERT` vào
@@ -35,11 +37,29 @@ agent một model và một phong cách khác nhau, để xem lối nghĩ nào h
 | TradingView Desktop | Nguồn giá. Phải bật cổng gỡ lỗi CDP 9222. |
 | API key LLM (tuỳ chọn) | Chỉ cần khi muốn agent suy nghĩ thật, không cần cho chế độ `--stub`. |
 
-**Bật CDP cho TradingView Desktop** — thoát hẳn ứng dụng rồi khởi động lại
-bằng dòng lệnh:
+**Bật CDP cho TradingView Desktop** — phải **dừng dứt điểm mọi tiến trình cũ**
+trước khi mở lại kèm cổng gỡ lỗi, nếu không tiến trình mới sẽ chỉ chuyển focus
+sang cửa sổ cũ (không có cổng debug) thay vì mở tiến trình mới.
+
+**Nếu TradingView cài qua Microsoft Store** (kiểm tra bằng
+`Get-AppxPackage -Name "*TradingView*"` trong PowerShell — có kết quả trả về
+nghĩa là bản Store; đường dẫn dưới đây khớp bản `3.3.0.7992`, số hiệu bản có
+thể khác trên máy bạn — chạy `(Get-AppxPackage -Name "*TradingView*").InstallLocation`
+để lấy đường dẫn đúng):
 
 ```powershell
-& "$env:LOCALAPPDATA\Programs\TradingView\TradingView.exe" --remote-debugging-port=9222
+Get-Process TradingView -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Process "C:\Program Files\WindowsApps\TradingView.Desktop_3.3.0.7992_x64__n534cwy3pjxzj\TradingView.exe" `
+  -ArgumentList "--remote-debugging-port=9222"
+```
+
+**Nếu TradingView cài kiểu thường** (`%LOCALAPPDATA%\Programs\TradingView\`
+hoặc tương tự):
+
+```powershell
+Get-Process TradingView -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Process "$env:LOCALAPPDATA\Programs\TradingView\TradingView.exe" `
+  -ArgumentList "--remote-debugging-port=9222"
 ```
 
 Kiểm tra đã bật chưa:
@@ -48,7 +68,10 @@ Kiểm tra đã bật chưa:
 curl http://127.0.0.1:9222/json/version
 ```
 
-Có JSON trả về là được. Không có thì mọi lệnh lấy giá sẽ báo `DATA_STALE`.
+Có JSON trả về (kèm `webSocketDebuggerUrl`) là được. Không có thì mọi lệnh lấy
+giá sẽ báo `DATA_STALE`. Chạy các lệnh trên trong PowerShell **của chính bạn**
+(không phải qua agent/CI) — TradingView là ứng dụng GUI, cần một phiên desktop
+hiển thị được mới mở lên đúng cách.
 
 ---
 
@@ -219,10 +242,14 @@ Tiến trình này giữ lịch và tự gọi mọi thứ, theo giờ Việt Na
 |---|---|---|
 | 08:30 T2–T6 | `ingest_prices` | Lấy giá và tính chỉ báo |
 | 08:45 T2–T6 | `ingest_news` | Gom tin 6 nguồn VN + chỉ số thị trường |
-| 09:15 T2–T6 | `run_session` | Cả 5 agent giao dịch |
-| 09:00–14:55 mỗi 5 phút | `poll_quotes` | Thu báo giá (tự bỏ giờ nghỉ trưa) |
+| 09:00–14:55 mỗi 5 phút | `poll_quotes` → `watch_tick` | Thu báo giá, rồi mở phiên (nếu chưa) + watchdog tick ngay tick đó |
+| 14:58 T2–T6 | `watch_close` | Chốt sổ agent đã mở mà chưa chốt hôm đó |
 | 15:00 T2–T6 | `report_day` | Tổng kết và gửi Telegram |
 | 02:00 hằng ngày | `prune_events` | Dọn nhật ký cũ |
+
+`watch_tick` chạy NỐI TIẾP ngay sau `poll_quotes` (không phải job cron riêng)
+để luôn thấy đúng tick vừa ghi. STOP_LOSS/TRAILING chạm ngưỡng thì bán ngay
+trong vòng tối đa 5 phút, không đợi tới cuối phiên.
 
 Muốn chạy nền lâu dài thì dùng PM2 với cấu hình có sẵn:
 
@@ -356,12 +383,12 @@ Sửa [config/agents.json](../config/agents.json). Mỗi agent có:
 
 - `personaPrompt` — mô tả phong cách, đi thẳng vào prompt hệ thống
 - `initialCapital` — mặc định 1 tỷ VND
-- `riskConfig` — `maxPositions`, `maxPositionPctNav`, `dailyLossLimitPct`
+- `riskConfig` — `maxPositionPctNav`, `dailyLossLimitPct`
 
-**Hàng rào rủi ro được cưỡng chế bằng code, ngoài tầm với của LLM:** tối đa 8
-vị thế, tối đa 20% NAV cho một mã, không đòn bẩy, không bán khống, dừng giao
-dịch khi lỗ trong ngày vượt 5% NAV. Agent có thuyết phục hay đến đâu cũng
-không vượt qua được.
+**Hàng rào rủi ro được cưỡng chế bằng code, ngoài tầm với của LLM:** tối đa 20%
+NAV cho một mã, không đòn bẩy, không bán khống, dừng giao dịch khi lỗ trong
+ngày vượt 5% NAV. Agent có thuyết phục hay đến đâu cũng không vượt qua được.
+Không giới hạn số loại mã đang giữ — agent tự quyết định dàn trải bao nhiêu mã.
 
 Đổi `personaPrompt` giữa chừng thì các phiên trước đó vẫn giữ nguyên trong
 lịch sử — so sánh NAV qua mốc đó sẽ khập khiễng.
@@ -409,7 +436,7 @@ FROM lessons WHERE NOT retired ORDER BY confidence DESC LIMIT 20;
 | `Thiếu biến môi trường bắt buộc: DATABASE_URL_TEST` | Bộ nạp cấu hình đọc cả hai URL kể cả khi chạy thật | Điền `DATABASE_URL_TEST` vào `.env` dù chưa định chạy test |
 | `createdb: command not found` | Windows không tự thêm thư mục `bin` của PostgreSQL vào PATH | Dùng `npm run db:create`, hoặc gọi bằng đường dẫn đầy đủ (mục 2) |
 | `password authentication failed for user "postgres"` | Sai mật khẩu trong `DATABASE_URL` | Sửa `.env`. Nếu vừa sửa file, nhớ lưu — tiến trình đang chạy vẫn giữ giá trị cũ cho tới khi khởi động lại |
-| `chart_ready=false` hoặc `DATA_STALE` | TradingView Desktop chưa chạy, hoặc chưa bật CDP 9222 | Khởi động lại TradingView với `--remote-debugging-port=9222`, kiểm tra bằng `curl http://127.0.0.1:9222/json/version` |
+| `chart_ready=false` hoặc `DATA_STALE` | TradingView Desktop chưa chạy, hoặc chưa bật CDP 9222 | Xem mục 1 — nhớ `Stop-Process -Force` tiến trình cũ trước khi mở lại kèm `--remote-debugging-port=9222`, nếu không sẽ chỉ focus vào cửa sổ cũ không có cổng debug; kiểm tra bằng `curl http://127.0.0.1:9222/json/version` |
 | `loadApiConfig: thiếu DATABASE_URL_READONLY` | Chưa điền URL chỉ-đọc | Thêm vào `.env`; role được tạo bởi `npm run migrate` |
 | Dashboard trắng, không có agent nào | Chưa chạy phiên nào | `npm run sim:all -- --date <hôm-nay> --stub` |
 | Biểu đồ NAV nói "Chưa có phiên nào để vẽ" | Chưa có `portfolio_snapshot` thật (mốc 1970 không được tính) | Như trên |
@@ -461,9 +488,11 @@ npm run api                                       # dashboard :8080
 npm run ingest:prices                             # lấy giá + tính chỉ báo
 npm run poll:quotes                               # thu báo giá trong phiên
 
-npm run sim:all     -- --date YYYY-MM-DD [--stub] # cả 5 agent
+npm run sim:all     -- --date YYYY-MM-DD [--stub] # cả 5 agent, replay theo lô (xem lại/test tay)
 npm run sim:day     -- --agent <id> --date YYYY-MM-DD [--stub]
 npm run sim:session -- --agent <id> --date YYYY-MM-DD [--stub]
+npm run watch:tick  -- --date YYYY-MM-DD [--stub] # watcher sống: mở phiên (nếu chưa) + 1 tick — data-service gọi mỗi 5 phút
+npm run watch:close -- --date YYYY-MM-DD [--stub] # chốt sổ agent đã mở mà chưa chốt hôm đó
 npm run report:day  -- --date YYYY-MM-DD          # tổng kết + Telegram
 ```
 

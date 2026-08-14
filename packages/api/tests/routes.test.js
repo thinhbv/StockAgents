@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { withTestDb, resetTables } from '../../../tests/helpers/db.js';
 import {
   createAgentsRepo, createTradingRepo, createOpsRepo, createEventsRepo, createLessonsRepo,
+  createMarketRepo,
 } from '@stockagents/db';
 import { createRoutes } from '../src/routes.js';
 
@@ -27,7 +28,7 @@ before(async () => {
   repos = {
     agents: createAgentsRepo(client), trading: createTradingRepo(client),
     ops: createOpsRepo(client), events: createEventsRepo(client),
-    lessons: createLessonsRepo(client),
+    lessons: createLessonsRepo(client), market: createMarketRepo(client),
   };
   tmpDir = await mkdtemp(join(tmpdir(), 'routes-test-'));
   agentsConfigPath = join(tmpDir, 'agents.json');
