@@ -15,6 +15,32 @@ const state = { lastEventId: 0, selected: localStorage.getItem(SELECTED_KEY), na
 const vnd = (n) => (n === null || n === undefined) ? '—' : Math.round(n).toLocaleString('vi-VN');
 const pct = (n) => (n === null || n === undefined) ? '—' : `${n > 0 ? '+' : ''}${n}%`;
 
+// Nhãn tiếng Việt cho mọi mã trạng thái nội bộ — dùng CHUNG một bảng ở đây
+// thay vì mỗi chỗ tự dịch một câu, để không bao giờ lệch nghĩa giữa "Phiên"
+// ở đầu trang và dòng mô tả trong "Dòng sự kiện".
+const DATA_STATE_LABEL = {
+  DATA_READY: 'dữ liệu sẵn sàng', DATA_PARTIAL: 'dữ liệu thiếu một phần', DATA_STALE: 'dữ liệu cũ',
+};
+const SESSION_STATE_LABEL = {
+  PRE_OPEN: 'chuẩn bị mở phiên', OPEN: 'mở cửa', WATCHING: 'đang theo dõi',
+  CLOSING: 'đóng phiên', LEARNING: 'đang rút kinh nghiệm', IDLE: 'nghỉ',
+};
+const TRIGGER_LABEL = {
+  TAKE_PROFIT: 'chốt lời', STOP_LOSS: 'cắt lỗ', TRAILING: 'trượt theo đỉnh',
+  TIME_STOP: 'hết hạn giữ', NEWS_ALERT: 'tin xấu', EOD_REVIEW: 'rà soát cuối phiên',
+  PRICE_MOVE: 'biến động mạnh',
+};
+const EVENT_TYPE_LABEL = {
+  'session.state': 'trạng thái phiên', 'trigger.fired': 'chạm ngưỡng',
+  'agent.started': 'đánh thức agent', 'agent.decided': 'agent quyết định',
+  'agent.skipped': 'agent bỏ lượt', 'order.placed': 'đặt lệnh',
+  'order.filled': 'khớp lệnh', 'order.rejected': 'lệnh bị từ chối',
+  'position.marked': 'cập nhật vị thế', 'metrics.updated': 'cập nhật chỉ số',
+  'market.snapshot': 'chỉ số thị trường', 'data.ingested': 'đã lấy dữ liệu giá',
+  'data.stale': 'dữ liệu không dùng được',
+};
+const ACTION_LABEL = { BUY: 'MUA', SELL: 'BÁN', HOLD: 'GIỮ' };
+
 function dirClass(n) {
   if (n === null || n === undefined || n === 0) return 'flat';
   return n > 0 ? 'up' : 'down';
@@ -59,8 +85,7 @@ async function refreshSession() {
   try {
     const s = await getJson('/api/session');
     const kind = { DATA_READY: 'ok', DATA_PARTIAL: 'warn', DATA_STALE: 'bad' }[s.state] ?? 'unknown';
-    const label = { DATA_READY: 'dữ liệu sẵn sàng', DATA_PARTIAL: 'dữ liệu thiếu một phần', DATA_STALE: 'dữ liệu cũ' }[s.state]
-      ?? (s.state === 'UNKNOWN' ? 'chưa chạy' : s.state);
+    const label = DATA_STATE_LABEL[s.state] ?? (s.state === 'UNKNOWN' ? 'chưa chạy' : s.state);
     setTag($('session-state'), label, kind);
 
     if (!s.dataCapturedAt) {
@@ -321,7 +346,7 @@ function renderDecisions(list) {
     });
     li.innerHTML = `
       <div class="decision-top">
-        <span class="decision-act ${d.action}">${d.action}</span>
+        <span class="decision-act ${d.action}">${ACTION_LABEL[d.action] ?? d.action}</span>
         <span>${d.symbol}</span>
         <span>${d.qty.toLocaleString('vi-VN')} cp @ ${vnd(d.priceVnd)}</span>
         ${d.confidence === null ? '' : `<span>tin cậy ${d.confidence}</span>`}
@@ -444,8 +469,9 @@ const TYPE_STYLE = {
 function describe(e) {
   const p = e.payload ?? {};
   switch (e.type) {
-    case 'trigger.fired': return `${p.triggerType} · ${p.reason}`;
-    case 'session.state': return `${p.state}${p.dataState ? ` · dữ liệu ${p.dataState}` : ''}`;
+    case 'trigger.fired': return `${TRIGGER_LABEL[p.triggerType] ?? p.triggerType} · ${p.reason}`;
+    case 'session.state': return `${SESSION_STATE_LABEL[p.state] ?? p.state}`
+      + `${p.dataState ? ` · ${DATA_STATE_LABEL[p.dataState] ?? p.dataState}` : ''}`;
     case 'agent.started': return `đánh thức: ${(p.symbols ?? []).join(', ')}`;
     case 'agent.skipped': return `bỏ lượt — ${p.error}`;
     case 'metrics.updated': return `Tổng tài sản ${vnd(p.nav)} · ${pct(p.totalReturnPct)}`;
@@ -477,7 +503,7 @@ function pushEvent(e) {
   li.innerHTML = `
     <div class="feed-top">
       <span class="feed-time">${time}</span>
-      <span class="feed-type ${cls}">${e.type}</span>
+      <span class="feed-type ${cls}">${EVENT_TYPE_LABEL[e.type] ?? e.type}</span>
       ${e.agentId ? `<span class="feed-time">${e.agentId}</span>` : ''}
     </div>
     <p class="feed-body">${describe(e)}</p>`;

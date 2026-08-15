@@ -12,21 +12,20 @@ Mọi bảng nằm trong 1 database (`DATABASE_URL`). Vai trò `stockagents_ro`
 
 ## Bốn nhóm bảng
 
-```mermaid
-erDiagram
-    universe ||--o{ ohlcv_daily : "giá theo ngày"
-    universe ||--o{ quote_tick : "giá theo tick"
-    universe ||--o{ indicator_snapshot : "chỉ báo KT"
-    agents ||--o{ orders : "đặt lệnh"
-    agents ||--o{ positions : "đang giữ"
-    agents ||--o{ trades : "đã quyết định"
-    agents ||--o{ lessons : "bài học riêng"
-    agents ||--o{ portfolio_snapshot : "NAV theo ngày"
-    agents ||--o{ metrics_daily : "chỉ số theo ngày"
-    orders ||--o{ fills : "khớp lệnh"
-    positions ||--o{ position_lots : "lô mua (T+2.5)"
-    trades ||--o| trade_outcomes : "vòng lãi/lỗ"
-    lessons ||--o{ lesson_usage : "lần dùng lại"
+```
+ universe ──< ohlcv_daily            (giá theo ngày)
+          ──< quote_tick             (giá theo tick)
+          ──< indicator_snapshot     (chỉ báo KT)
+
+ agents   ──< orders ──< fills                (đặt lệnh → khớp lệnh)
+          ──< positions ──< position_lots     (đang giữ → lô mua, luật T+2.5)
+          ──< trades ──o trade_outcomes       (đã quyết định → vòng lãi/lỗ)
+          ──< lessons ──< lesson_usage        (bài học riêng → lần dùng lại)
+          ──< portfolio_snapshot              (NAV theo ngày)
+          ──< metrics_daily                   (chỉ số theo ngày)
+
+ ký hiệu: A ──< B  = một A có nhiều B (1-n)
+          A ──o B  = một A có tối đa một B (1-0..1)
 ```
 
 | Nhóm | Bảng | Ai ghi |

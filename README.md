@@ -6,6 +6,9 @@ Không kết nối tới môi giới thật, không đặt lệnh bằng tiền 
 **→ [Hướng dẫn sử dụng](docs/huong-dan-su-dung.md)** — cài đặt, chạy hằng ngày,
 đọc dashboard, xử lý sự cố. Bắt đầu từ đây nếu bạn muốn *dùng* hệ thống.
 
+**→ [Kiến trúc hệ thống](docs/kien-truc-he-thong.md)** — 4 package, luồng dữ
+liệu giữa chúng, và vai trò từng module bên trong.
+
 **→ [Thiết kế database](docs/thiet-ke-database.md)** — 22 bảng, quan hệ giữa
 chúng, và vì sao mỗi bảng có hình dạng như vậy.
 
