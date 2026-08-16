@@ -79,6 +79,40 @@ test('API trả lỗi thì báo lại mã HTTP, không im lặng', async () => {
   assert.match(out.reason, /429/);
 });
 
+test('Markdown lỗi entity thì gửi lại dạng chữ thường, không mất tin nhắn', async () => {
+  const calls = [];
+  const fetchImpl = async (url, opts) => {
+    const body = JSON.parse(opts.body);
+    calls.push(body);
+    if (body.parse_mode === 'Markdown') {
+      return {
+        ok: false, status: 400,
+        text: async () => JSON.stringify({
+          ok: false, description: "Bad Request: can't parse entities: Can't find end of the entity",
+        }),
+      };
+    }
+    return { ok: true, text: async () => '' };
+  };
+  const r = createTelegramReporter({ token: 'T', chatId: 'C', fetchImpl, logger: silent });
+
+  const out = await r.send('agent_id chưa đóng dấu *');
+  assert.deepEqual(out, { sent: true });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].parse_mode, 'Markdown');
+  assert.equal(calls[1].parse_mode, undefined);
+});
+
+test('lỗi HTTP khác lỗi parse entity thì KHÔNG gửi lại, báo lỗi luôn', async () => {
+  let callCount = 0;
+  const fetchImpl = async () => { callCount++; return { ok: false, status: 429, text: async () => 'too many' }; };
+  const r = createTelegramReporter({ token: 'T', chatId: 'C', fetchImpl, logger: silent });
+
+  const out = await r.send('x');
+  assert.equal(out.sent, false);
+  assert.equal(callCount, 1);
+});
+
 test('reportDay lấy bảng xếp hạng rồi gửi đi', async () => {
   let sentText = null;
   const fetchImpl = async (url, opts) => {

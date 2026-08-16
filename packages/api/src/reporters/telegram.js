@@ -38,15 +38,30 @@ export function createTelegramReporter({ token, chatId, fetchImpl = fetch, logge
     logger.info('[telegram] thiếu TELEGRAM_TOKEN hoặc TELEGRAM_CHAT_ID — bỏ qua báo cáo');
   }
 
+  async function post(text, parseMode) {
+    const body = { chat_id: chatId, text };
+    if (parseMode) body.parse_mode = parseMode;
+    const res = await fetchImpl(`${API}/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} — ${await res.text()}`);
+  }
+
   async function send(text) {
     if (!enabled) return { sent: false, reason: 'chưa cấu hình' };
     try {
-      const res = await fetchImpl(`${API}/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status} — ${await res.text()}`);
+      // text có thể là lời đáp tự do của LLM (agent điều phối), không đảm bảo
+      // là Markdown hợp lệ (một dấu * hoặc _ lẻ cũng làm Telegram từ chối cả
+      // tin nhắn) — lỗi "can't parse entities" thì gửi lại dạng chữ thường,
+      // không mất tin nhắn chỉ vì định dạng.
+      try {
+        await post(text, 'Markdown');
+      } catch (err) {
+        if (!/can't parse entities/i.test(err.message)) throw err;
+        await post(text);
+      }
       return { sent: true };
     } catch (err) {
       // Báo cáo hỏng không được làm hỏng phiên. Ghi log rồi đi tiếp.
