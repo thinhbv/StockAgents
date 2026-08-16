@@ -28,6 +28,7 @@ Tài liệu này mô tả **implementation**. Về triết lý thiết kế tổ
 | 5 agent / 4 provider LLM | `agent-runtime/agents/registry.js`, `llm/provider.js`, `llm/anthropic.js`, `llm/openai.js`, `llm/gemini.js`, `llm/deepseek.js`, `llm/stub.js`, `config/agents.json` |
 | Memory / RAG / lesson scorer | `agent-runtime/memory/similarity.js`, `memory/retrieval.js`, `learning/scorer.js`, `learning/reflect.js`, `db/repositories/lessons.js` |
 | Tin tức VN + sentiment từ điển + Telegram | `data-service/news/sources.js`, `news/sentiment.js`, `jobs/ingest_news.js`, `db/repositories/news.js`, `api/reporters/telegram.js`, `api/cli_report.js` |
+| Agent điều phối — trò chuyện/điều chỉnh qua Telegram | `api/coordinator.js`, `api/telegram_poll.js`, `api/telegram_bot.js`, `api/routes.js::updateAgentRisk` |
 | Vòng giao dịch, 6+1 chỉ số, biểu đồ NAV | `agent-runtime/sim/outcomes.js`, `sim/metrics.js`, `db/repositories/trading.js`, `api/public/app.js::renderNavChart` |
 | Data-quality gate (chặn mua khi thiếu chỉ báo thật) | `agent-runtime/agents/context.js` (cờ `indicatorsMissing`), `sim/guardrails.js::checkBuy` |
 | Bối cảnh vĩ mô dùng chung cho mọi agent | `agent-runtime/agents/context.js` (`market.indices`), `orchestrator/session.js` (sự kiện `market.snapshot`) |
@@ -53,7 +54,7 @@ Bọc `pg.Pool` thành client dùng chung cho toàn bộ package `@stockagents/d
 ### `packages/db/src/index.js`
 Điểm export duy nhất ra ngoài package `@stockagents/db` — mọi consumer chỉ import qua đây, không import trực tiếp file trong `repositories/`.
 
-- Re-export `createClient`, `runMigrations`, `loadConfig`, `assertAgentScope`, và factory của toàn bộ repository: `createUniverseRepo`, `createMarketRepo`, `createOpsRepo`, `createEventsRepo`, `createAgentsRepo`, `createTradingRepo`, `createTriggersRepo`, `createLessonsRepo`, `createNewsRepo`.
+- Re-export `createClient`, `runMigrations`, `loadConfig`, `assertAgentScope`, và factory của toàn bộ repository: `createUniverseRepo`, `createMarketRepo`, `createOpsRepo`, `createEventsRepo`, `createAgentsRepo`, `createTradingRepo`, `createTriggersRepo`, `createLessonsRepo`, `createNewsRepo`, `createFundamentalsRepo`.
 
 ### `packages/db/src/migrate.js`
 Chạy các file migration SQL trong `packages/db/migrations/` theo đúng thứ tự tên file, chỉ áp dụng file chưa từng chạy.
@@ -109,6 +110,13 @@ Bảng `news_items` — tin tức thị trường dùng chung cho mọi agent, k
 - `listRecent({ symbol, since, limit })` — lấy tin gần đây, lọc theo mã và mốc thời gian tuỳ chọn.
 - `worstSentimentBySymbol({ since })` — với mỗi mã, lấy sentiment THẤP NHẤT (MIN) trong khung thời gian — cố ý không lấy trung bình, vì một tin cực xấu bị pha loãng bởi vài tin trung tính không được phép biến mất khỏi tín hiệu; đây là dữ liệu watchdog dùng để quyết định đánh thức agent giữa phiên vì tin xấu.
 
+### `packages/db/src/repositories/fundamentals.js`
+Bảng `fundamentals_snapshot` — chỉ số tài chính cơ bản theo quý (P/E, P/B, ROE, ROA, cổ tức, nợ/vốn chủ, vốn hoá...) cho từng mã, dùng chung cho mọi agent giống `news.js` nên cũng không gọi `assertAgentScope`.
+
+- `insertSnapshot(symbol, payload)` — ghi một bản chụp chỉ số tài chính tại một thời điểm (`captured_at = now()`), không upsert — mỗi lần ingest là một bản ghi mới để giữ lịch sử.
+- `getLatest(symbol)` — bản chụp mới nhất của một mã, `null` nếu chưa có.
+- `getLatestForSymbols(symbols)` — bản mới nhất mỗi mã trong danh sách (`SELECT DISTINCT ON (symbol) ... ORDER BY symbol, captured_at DESC`), trả `Map<symbol, payload>`; MỘT câu truy vấn cho cả universe thay vì N câu, giống cách `news.js` được dùng trong context.js. Mảng rỗng trả `Map` rỗng ngay, không query.
+
 ### `packages/db/src/repositories/ops.js`
 Trạng thái vận hành cấp hệ thống: `session_state` (cổng dữ liệu quyết định có mở phiên hay không) và `market_holidays`.
 
@@ -148,7 +156,7 @@ Thu thập dữ liệu THẬT: giá qua TradingView Desktop (CDP), tin tức VN.
 ### `packages/data-service/src/index.js`
 Entry point khởi động data-service: nạp cấu hình, mở kết nối DB, dựng broker CDP, seed universe, đăng ký toàn bộ job vào scheduler với vòng đời tắt an toàn.
 
-- `createRepos(client)` — dựng bộ repository (universe, market, ops, events, news) từ một client DB; `cli.js` tái sử dụng để không lặp lại danh sách repo mỗi nơi cần.
+- `createRepos(client)` — dựng bộ repository (universe, market, ops, events, news, fundamentals) từ một client DB; `cli.js` tái sử dụng để không lặp lại danh sách repo mỗi nơi cần.
 - `main()` (nội bộ, không export) — seed universe từ `config/universe.json`; bọc các job phụ thuộc phiên giao dịch (`ingest_prices`, `ingest_news`, `run_session`, `report_day`) bằng `onTradingDayOnly` để cron `* * * * 1-5` (vốn chỉ loại được cuối tuần) không chạy nhầm vào ngày nghỉ lễ — chạy nhầm sẽ ghi lại dữ liệu phiên hôm trước với `captured_at` hôm nay, trông tươi nhưng không phải, và cổng `DATA_READY` sẽ cho agent giao dịch trên dữ liệu cũ. `poll_quotes` không cần bọc vì đã tự lọc giờ qua `isTradingWindow`. Nhận SIGINT/SIGTERM thì gọi `scheduler.drain()` trước khi đóng pool, để job đang ghi DB không bị cắt ngang bởi restart PM2. `run_session`/`report_day` gọi qua tiến trình con (`spawnTask`) để giữ ranh giới package.
 
 ### `packages/data-service/src/cli.js`
@@ -159,7 +167,7 @@ Script chạy tay một job ingest đơn lẻ (`ingest-prices` hoặc `poll-quot
 ### `packages/data-service/src/scheduler.js`
 Đăng ký job định kỳ bằng `node-cron` theo giờ Việt Nam, đảm bảo một job lỗi không làm sập tiến trình và job đang chạy dở luôn được chờ xong trước khi tắt hệ thống.
 
-- `SCHEDULES` — `ingest_prices` 08:30, `ingest_news` 08:45, `run_session` 09:15, `report_day` 15:00, `poll_quotes` mỗi 5 phút trong 09:00–14:55, `prune_events` 02:00.
+- `SCHEDULES` — `ingest_prices` 08:30, `ingest_fundamentals` 08:35, `ingest_news` 08:45, `run_session` 09:15, `report_day` 15:00, `poll_quotes` mỗi 5 phút trong 09:00–14:55, `prune_events` 02:00.
 - `startScheduler({ jobs, cronLib, logger })` — xác thực TRƯỚC KHI đăng ký bất kỳ job nào (nếu kiểm tra nằm trong vòng lặp đăng ký, một lỗi ở job thứ ba sẽ để lại hai job đầu có timer thật chạy mà không còn handle để `stop()`); `cronLib` tiêm vào để test không chờ đồng hồ thật; job ném lỗi bị nuốt và log thay vì crash tiến trình. Trả `{ stop, drain }`.
   - `stop()` — dừng mọi cron task; chỉ chặn lần chạy TƯƠNG LAI.
   - `drain(timeoutMs = 30000)` — chờ job đang chạy dở xong trước khi cho phép đóng pool, có timeout để job kẹt không chặn shutdown vô thời hạn.
@@ -228,6 +236,19 @@ Job 08:45: thu tin tức tiếng Việt vào `news_items`, kèm chỉ số thị
 
 - `runIngestNews({ repos, sources, indices, logger, embedder })` — `sources` tiêm vào để test không gọi mạng thật. Với mỗi bài: giải mã thực thể HTML (`decodeEntities`) TRƯỚC khi chấm điểm/dò mã, dò mã liên quan (`detectSymbol`), chấm sentiment (`scoreSentiment`) trên tiêu đề + tóm tắt. Một nguồn lỗi chỉ vào `failedSources`, không chặn nguồn khác. Ghi sự kiện `news.ingested` kèm thống kê.
 
+### `packages/data-service/src/collectors/fundamentals.js`
+Lấy chỉ số tài chính cơ bản cho một mã từ API công khai VCI (Vietcap) — dò ra qua đọc mã nguồn thư viện `vnstock`, không cần đăng nhập, chỉ cần header giống trình duyệt (Referer/Origin/User-Agent).
+
+- `pickRatios(r)` (nội bộ) — lọc chỉ giữ field dùng để phân tích (`pe`, `pb`, `ps`, `roe`, `roa`, `dividendYield`, `debtToEquity`, `currentRatio`, `grossMargin`, `marketCap`, `yearReport`, `quarter`), bỏ field chỉ có nghĩa với ngân hàng (`car`, `npl`...).
+- `tickerOf(symbol)` (nội bộ) — bóc tiền tố sàn (`'HOSE:FPT'` → `'FPT'`) vì API nhận ticker trần.
+- `collectFundamentals(symbol, fetchImpl = fetch)` — gọi `GET .../company/{ticker}/statistics-financial`, tự tìm bản MỚI NHẤT theo `(yearReport, quarter)` bằng `reduce` — không tin thứ tự mảng API trả về. Ném lỗi rõ khi HTTP lỗi hoặc data rỗng, không trả giá trị rác.
+- `collectFundamentalsBatch(symbols, fetchImpl = fetch)` — một mã lỗi vào `errors`, không chặn mã khác; trả `{ snapshots, errors }`.
+
+### `packages/data-service/src/jobs/ingest_fundamentals.js`
+Job 08:35 (giữa `ingest_prices` 08:30 và `ingest_news` 08:45): thu chỉ số tài chính cơ bản cho toàn universe.
+
+- `runIngestFundamentals({ repos, logger, fetchImpl })` — lặp `repos.universe.listActive()`, gọi `collectFundamentalsBatch`, ghi từng snapshot qua `repos.fundamentals.insertSnapshot`, log lỗi qua `repos.ops.logIngestError`, phát sự kiện `fundamentals.ingested`. KHÔNG đụng tới `session_state` — best-effort, không chặn phiên giao dịch nếu API bên ngoài lỗi (khác với `ingest_prices`, đây không phải dữ liệu bắt buộc để mở phiên).
+
 ### `packages/data-service/src/jobs/prune_events.js`
 Job 02:00, xoá bản ghi `event_log` cũ hơn số ngày lưu trữ cấu hình.
 
@@ -268,7 +289,8 @@ Nạp và validate danh sách định nghĩa agent từ `config/agents.json` —
 ### `packages/agent-runtime/src/agents/context.js`
 Dựng gói context (JSON) gửi cho LLM trước mỗi lượt ra quyết định — TOÀN BỘ những gì agent "nhìn thấy".
 
-- `buildContext({ repos, agentId, tradeDate, universe, snapshots, priceMap, trigger, risk, queryVector })` — gộp: `market.indices` (chỉ số vĩ mô dùng chung cho mọi agent, từ `repos.market.getLatestIndices()`); `universe` kèm giá, chỉ báo, cờ `indicatorsMissing` tường minh (guardrails.js::checkBuy dùng cờ này để chặn mua khi thiếu dữ liệu), và `maxAffordableQty` — TRẦN khối lượng còn mua được cho mã đó (đã trừ phí, làm tròn lô chẵn, tính sẵn thay vì để LLM tự chia availableCash/price — model nhỏ như Haiku 4.5 đã cho thấy tính sai gấp hàng chục-hàng trăm lần trong thực tế); `portfolio` (tiền mặt, NAV, vị thế); `memory` (lệnh gần đây + bài học liên quan qua `retrieveLessons`); `constraints` (tỷ trọng tối đa/mã, lô tối thiểu, tiền khả dụng — không giới hạn số loại mã hay số lệnh mới/phiên, agent tự quyết định dàn trải). Mọi truy vấn đi qua repository có `assertAgentScope`, nên context của agent này không thể chứa dữ liệu của agent khác.
+- `fetchNews(repos)` (nội bộ) — MỘT câu truy vấn `repos.news.listRecent({ since: 3 ngày gần nhất, limit: 200 })` rồi nhóm ở client theo mã (tối đa 5 tin/mã) và tin chung thị trường (`symbol IS NULL`, tối đa 10 tin) — không query riêng từng mã vì tổng lượng tin một ngày chỉ vài chục bài. `repos.news` vắng mặt (test nhẹ) thì trả rỗng, không lỗi.
+- `buildContext({ repos, agentId, tradeDate, universe, snapshots, priceMap, trigger, risk, queryVector })` — gộp: `market.indices` (chỉ số vĩ mô dùng chung cho mọi agent, từ `repos.market.getLatestIndices()`) và `market.news` (tin chung thị trường); `universe` kèm giá, chỉ báo, cờ `indicatorsMissing` tường minh (guardrails.js::checkBuy dùng cờ này để chặn mua khi thiếu dữ liệu), `maxAffordableQty` — TRẦN khối lượng còn mua được cho mã đó (đã trừ phí, làm tròn lô chẵn, tính sẵn thay vì để LLM tự chia availableCash/price — model nhỏ như Haiku 4.5 đã cho thấy tính sai gấp hàng chục-hàng trăm lần trong thực tế), `news` — tiêu đề/tóm tắt/sentiment/nguồn tin THẬT của riêng mã đó (không chỉ điểm sentiment: chấm điểm bằng từ điển chỉ đủ để watchdog biết có nên đánh thức agent hay không, còn bản thân agent phải tự đọc và tự đánh giá — trước đây context chưa từng đưa tin thật vào dù persona đã nói sẽ đọc "tin tức"), và `fundamentals` — chỉ số cơ bản quý gần nhất (P/E, P/B, ROE, ROA, cổ tức, nợ/vốn chủ, vốn hoá) đọc MỘT LẦN cho cả universe qua `repos.fundamentals.getLatestForSymbols` (giống cách gộp news), `null` nếu chưa ingest được cho mã đó — không đoán bừa; đây là mảng dữ liệu hệ thống thiếu hẳn từ đầu (không phải quên nối dây như news) cho tới khi được thêm; `portfolio` (tiền mặt, NAV, vị thế); `memory` (lệnh gần đây + bài học liên quan qua `retrieveLessons`); `constraints` (tỷ trọng tối đa/mã, lô tối thiểu, tiền khả dụng — không giới hạn số loại mã hay số lệnh mới/phiên, agent tự quyết định dàn trải). Mọi truy vấn đi qua repository có `assertAgentScope`, nên context của agent này không thể chứa dữ liệu của agent khác.
 
 ### `packages/agent-runtime/src/agents/runner.js`
 Cầu nối giữa LLM và engine khớp lệnh: gọi provider, validate output, nộp từng quyết định hợp lệ cho engine.
@@ -451,10 +473,12 @@ Bảng tên sự kiện phát qua `event_log` — hợp đồng giữa agent-run
 ### `packages/agent-runtime/src/orchestrator/watchdog.js`
 Vòng theo dõi mỗi tick — bất biến quan trọng nhất: không trigger nào nổ thì KHÔNG lời gọi LLM nào phát ra.
 
+- `MECHANICAL_SELL_TRIGGERS` (`STOP_LOSS`, `TRAILING`) — hai trigger BẢO VỆ VỐN bán thẳng qua engine, không hỏi lại LLM: chậm một nhịp hỏi ý kiến đúng lúc giá đang rơi là mất thêm tiền thật. `TAKE_PROFIT`/`TIME_STOP`/`NEWS_ALERT`/`EOD_REVIEW` vẫn đánh thức agent — đó là những lúc có thể đáng cân nhắc tiếp, quyết định thuộc về agent.
+- `autoSellPosition(...)` (nội bộ) — đặt lệnh SELL thị trường thẳng qua `engine.submit`, đúng số lượng `qtySellable` (không phải cả vị thế — phần chưa qua T+2.5 có muốn cũng không bán được); 0 cổ phiếu bán được thì trả `REJECTED` ngay, khỏi tốn một lượt `engine.submit()` chắc chắn bị `checkSell` chặn.
 - `createWatchdog({ repos, engine, runner, logger })` → `tick({ agentId, agentDef, now, tradeDate, tickPriceMap, refPriceMap, newsSentimentMap, universe })`:
-  - Vị thế đang giữ: cập nhật đỉnh giá (chỉ đi lên), gọi `evaluateTriggers`, kiểm debounce trước khi ghi `trigger_log` + phát `trigger.fired`.
+  - Vị thế đang giữ: cập nhật đỉnh giá (chỉ đi lên), gọi `evaluateTriggers`, kiểm debounce trước khi ghi `trigger_log` + phát `trigger.fired`. `STOP_LOSS`/`TRAILING` bán máy móc ngay (`autoSellPosition`); bán thành công thì dọn mã đó khỏi hàng chờ đánh thức LLM (`TAKE_PROFIT` có thể đã đưa vào trước đó — không hỏi LLM về một vị thế vừa đóng); bán KHÔNG được (chưa qua T+2.5) thì vẫn đánh thức LLM như đường cũ.
   - Mã KHÔNG giữ (từ `universe` trừ các mã đang giữ): gọi `evaluateUniverseAlerts`, chỉ ghi sự kiện, không đánh thức.
-  - Mọi trigger vị thế đang giữ nổ trong CÙNG tick gộp thành MỘT lời gọi LLM duy nhất, mang NAV/`dayPnl` THẬT (không phải 0 — guardrail chặn-lỗ-ngày đọc chúng). Provider lỗi không làm sập watchdog.
+  - Mọi trigger còn lại (không bị bán máy móc) nổ trong CÙNG tick gộp thành MỘT lời gọi LLM duy nhất, mang NAV/`dayPnl` THẬT (không phải 0 — guardrail chặn-lỗ-ngày đọc chúng), kèm `positions` (qtyTotal/qtySellable/avgCostVnd của đúng các mã vừa đánh thức — thiếu phần này từng khiến LLM trả `quantity: undefined` vì không biết đang giữ bao nhiêu) và `news` (tin THẬT theo mã, không chỉ điểm sentiment — `NEWS_ALERT` nổ vì có tin xấu nhưng trước đây agent không được đọc tin đó viết gì). Provider lỗi không làm sập watchdog.
 - `heldDaysOf(openedAt, now)` (nội bộ) — số ngày đã giữ, dùng cho `TIME_STOP`.
 
 ### `packages/agent-runtime/src/orchestrator/session.js`
@@ -510,6 +534,28 @@ Toàn bộ logic nghiệp vụ của dashboard API — mỗi hàm ứng một en
   - `modelCatalog()` — đọc `config/model-catalog.json`.
   - `agentConfig({ params })` — provider/model ĐANG CHỜ ÁP DỤNG (file) bên cạnh ĐANG CHẠY THẬT (DB) — hai nguồn cố ý lệch để form tô đúng lần sửa gần nhất.
   - `updateAgentConfig({ params, body })` — sửa provider/model, CHỈ ghi `config/agents.json` (không đụng DB); validate qua model catalog; ghi file tạm rồi `rename` đè.
+  - `updateAgentRisk({ params, body })` — sửa `maxPositionPctNav`/`dailyLossLimitPct` trong `riskConfig`, cùng con đường ghi an toàn (chỉ `config/agents.json`); chỉ ghi đè field THỰC SỰ được truyền, không xoá field còn lại; validate khoảng (0, 100]. Dùng cho agent điều phối qua Telegram.
+
+### `packages/api/src/coordinator.js`
+"Bộ não" của agent điều phối qua Telegram — chỉ đọc dữ liệu thật, mọi thay đổi đi qua đúng con đường ghi đã có (`config/agents.json`), không tự đặt lệnh mua/bán, không sửa persona.
+
+- `COORDINATOR_SCHEMA` — JSON Schema `{ reply, action }`; `action.type` là `NONE`/`SET_MODEL`/`SET_RISK` — dùng object có `type: 'NONE'` thay vì `null` để tránh vấn đề nullable-type không nhất quán giữa các provider.
+- `SYSTEM_PROMPT` — nói rõ ranh giới: chỉ dùng dữ liệu được cung cấp, không bịa; chỉ được SET_MODEL/SET_RISK; không được tự giao dịch hay đổi persona.
+- `buildSnapshot({ routes })` — gộp `session`, `leaderboard`, `events` (30 gần nhất), và với MỖI agent: `positions` + 10 quyết định gần nhất — gom đủ một lần vì không có tool-calling nhiều bước, và với chỉ 5 agent kích thước này vẫn nhỏ.
+- `respond({ provider, message, history, snapshot })` — gọi `provider.complete()` (tái dùng nguyên adapter LLM của agent-runtime); bóc phần tử đầu nếu trả về mảng (cùng hình dạng `complete()` dùng cho agent giao dịch); báo lỗi rõ nếu thiếu `reply`; mặc định `action = NONE` nếu provider bỏ trống.
+- `applyAction({ routes, action })` — KHÔNG BAO GIỜ ném lỗi ra ngoài, luôn trả một dòng tiếng Việt (thành công hay lý do thất bại) để nối vào reply; `SET_MODEL`/`SET_RISK` gọi thẳng `routes.updateAgentConfig`/`updateAgentRisk`.
+
+### `packages/api/src/telegram_poll.js`
+Long-polling Telegram (`getUpdates`) — không dùng webhook, vì máy chạy hệ thống không có địa chỉ HTTPS công khai cố định để Telegram gọi ngược vào.
+
+- `createTelegramPoll({ token, allowedChatId, onMessage, fetchImpl, logger, timeoutSec, retryDelayMs })` → `{ start, stop, pollOnce, getOffset }`:
+  - `pollOnce()` — gọi `getUpdates`, đẩy `offset` qua `update_id` lớn nhất TRƯỚC khi xử lý (một tin lỗi không được làm cả vòng polling kẹt lặp lại đúng tin đó); chỉ gọi `onMessage` cho tin từ đúng `allowedChatId` (so sánh ép về string vì Telegram trả `chat.id` dạng số nhưng cấu hình có thể là string) — chat khác bị bỏ qua và log cảnh báo; lỗi trong `onMessage` của một tin không chặn các tin còn lại cùng batch.
+  - `start()` — lặp gọi `pollOnce()` vô hạn tới khi `stop()`; lỗi polling (mất mạng, HTTP lỗi) thì chờ `retryDelayMs` rồi thử lại, không dừng hẳn.
+
+### `packages/api/src/telegram_bot.js`
+Entry point `npm run telegram-bot` — nối `coordinator.js` với `telegram_poll.js` thành agent điều phối chạy thật.
+
+- Không export (script). Kết nối DB bằng `DATABASE_URL_READONLY` (role chỉ SELECT — giống dashboard, một lỗi/lỗ hổng ở đây vẫn không sửa được DB); dựng `routes` (tái dùng `createRoutes` của dashboard) và `provider` (tái dùng `createProvider` của agent-runtime, mặc định `anthropic`/`claude-sonnet-5` qua `COORDINATOR_PROVIDER`/`COORDINATOR_MODEL`). Giữ lịch sử hội thoại trong bộ nhớ (tối đa 10 cặp hỏi-đáp gần nhất, mất khi restart — chấp nhận được cho v1). Mỗi tin nhắn: `buildSnapshot` → `respond` → `applyAction` → gửi `reply` (kèm kết quả action nếu có) qua `createTelegramReporter().send()` (tái dùng reporter đã có).
 
 ### `packages/api/src/stream/listener.js`
 Lắng nghe NOTIFY Postgres trên kênh `agent_events`.

@@ -244,8 +244,49 @@ export function createRoutes({
     return { id: params.id, provider, model, appliesFrom: 'phiên chạy tiếp theo' };
   }
 
+  /**
+   * Sửa riskConfig (maxPositionPctNav, dailyLossLimitPct) của một agent —
+   * cùng con đường ghi an toàn với updateAgentConfig: chỉ đụng
+   * config/agents.json, không đụng DB, áp dụng từ phiên chạy tiếp theo.
+   *
+   * Chỉ ghi đè field NÀO thực sự được truyền — gọi với chỉ một field không
+   * được vô tình xoá field còn lại (ví dụ agent điều phối chỉ muốn đổi
+   * dailyLossLimitPct thì maxPositionPctNav phải giữ nguyên).
+   */
+  async function updateAgentRisk({ params, body }) {
+    const { maxPositionPctNav, dailyLossLimitPct } = body ?? {};
+    if (maxPositionPctNav === undefined && dailyLossLimitPct === undefined) {
+      throw new HttpError(400, 'cần ít nhất một trong hai: maxPositionPctNav hoặc dailyLossLimitPct');
+    }
+    if (maxPositionPctNav !== undefined
+        && (typeof maxPositionPctNav !== 'number' || maxPositionPctNav <= 0 || maxPositionPctNav > 100)) {
+      throw new HttpError(400, `maxPositionPctNav phải trong khoảng (0, 100], nhận: ${maxPositionPctNav}`);
+    }
+    if (dailyLossLimitPct !== undefined
+        && (typeof dailyLossLimitPct !== 'number' || dailyLossLimitPct <= 0 || dailyLossLimitPct > 100)) {
+      throw new HttpError(400, `dailyLossLimitPct phải trong khoảng (0, 100], nhận: ${dailyLossLimitPct}`);
+    }
+
+    const defs = JSON.parse(await readFile(agentsConfigPath, 'utf8'));
+    const idx = defs.findIndex(d => d.id === params.id);
+    if (idx === -1) throw new HttpError(404, `không có agent '${params.id}' trong config/agents.json`);
+
+    const nextRisk = {
+      ...defs[idx].riskConfig,
+      ...(maxPositionPctNav !== undefined ? { maxPositionPctNav } : {}),
+      ...(dailyLossLimitPct !== undefined ? { dailyLossLimitPct } : {}),
+    };
+    defs[idx] = { ...defs[idx], riskConfig: nextRisk };
+
+    const tmpPath = `${agentsConfigPath}.tmp`;
+    await writeFile(tmpPath, `${JSON.stringify(defs, null, 2)}\n`, 'utf8');
+    await rename(tmpPath, agentsConfigPath);
+
+    return { id: params.id, riskConfig: nextRisk, appliesFrom: 'phiên chạy tiếp theo' };
+  }
+
   return {
     session, leaderboard, agent, positions, decisions, lessons, events, history,
-    modelCatalog, agentConfig, updateAgentConfig,
+    modelCatalog, agentConfig, updateAgentConfig, updateAgentRisk,
   };
 }

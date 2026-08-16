@@ -314,3 +314,49 @@ test('PATCH thiếu provider hoặc model trả 400', async () => {
     params: { id: 'a1' }, body: { provider: 'openai' },
   }), /400/);
 });
+
+/* ---------- Cấu hình rủi ro của agent (dùng chung cho agent điều phối) ---------- */
+
+test('PATCH /api/agents/:id/risk sửa maxPositionPctNav, giữ nguyên field khác', async () => {
+  const r = await routes.updateAgentRisk({ params: { id: 'a1' }, body: { maxPositionPctNav: 15 } });
+  assert.equal(r.riskConfig.maxPositionPctNav, 15);
+
+  const saved = JSON.parse(await readFile(agentsConfigPath, 'utf8'));
+  const a1 = saved.find(d => d.id === 'a1');
+  assert.equal(a1.riskConfig.maxPositionPctNav, 15);
+  assert.equal(a1.riskConfig.maxPositions, 8, 'field cũ không liên quan không bị xoá');
+});
+
+test('PATCH /api/agents/:id/risk chỉ đổi field được truyền, không xoá field còn lại', async () => {
+  await routes.updateAgentRisk({ params: { id: 'a1' }, body: { maxPositionPctNav: 15 } });
+  await routes.updateAgentRisk({ params: { id: 'a1' }, body: { dailyLossLimitPct: 3 } });
+
+  const saved = JSON.parse(await readFile(agentsConfigPath, 'utf8'));
+  const a1 = saved.find(d => d.id === 'a1');
+  assert.equal(a1.riskConfig.maxPositionPctNav, 15, 'lần sửa sau không được xoá lần sửa trước');
+  assert.equal(a1.riskConfig.dailyLossLimitPct, 3);
+});
+
+test('PATCH /api/agents/:id/risk agent chưa có riskConfig vẫn tạo được', async () => {
+  const r = await routes.updateAgentRisk({ params: { id: 'a2' }, body: { dailyLossLimitPct: 4 } });
+  assert.equal(r.riskConfig.dailyLossLimitPct, 4);
+});
+
+test('PATCH /api/agents/:id/risk thiếu cả hai field trả 400', async () => {
+  await assert.rejects(() => routes.updateAgentRisk({ params: { id: 'a1' }, body: {} }), /400/);
+});
+
+test('PATCH /api/agents/:id/risk giá trị ngoài (0,100] trả 400', async () => {
+  await assert.rejects(() => routes.updateAgentRisk({
+    params: { id: 'a1' }, body: { maxPositionPctNav: 0 },
+  }), /400/);
+  await assert.rejects(() => routes.updateAgentRisk({
+    params: { id: 'a1' }, body: { dailyLossLimitPct: 150 },
+  }), /400/);
+});
+
+test('PATCH /api/agents/:id/risk agent không tồn tại trả 404', async () => {
+  await assert.rejects(() => routes.updateAgentRisk({
+    params: { id: 'khong-co' }, body: { maxPositionPctNav: 10 },
+  }), /404/);
+});

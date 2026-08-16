@@ -215,9 +215,26 @@ export function createWatchdog({ repos, engine, runner, logger = console }) {
             avgCostVnd: p.avgCostVnd,
           }));
 
+        // NEWS_ALERT nổ VÌ có tin xấu, nhưng trước đây agent chỉ thấy câu tóm
+        // tắt "tin tiêu cực mạnh (sentiment -0.8)" trong firedTriggers, không
+        // được đọc tin đó viết gì — cùng lỗi đã sửa ở context.js (buildContext
+        // lúc mở cửa), chỉ khác là ở đây xảy ra tại đúng thời điểm agent phải
+        // quyết định. wakeFor chỉ 1-3 mã mỗi tick nên query riêng từng mã,
+        // không cần gộp một câu như buildContext (ở đó là cả universe ~30 mã).
+        const wakeNews = repos.news
+          ? Object.fromEntries(await Promise.all(wakeFor.map(async (symbol) => [
+              symbol,
+              (await repos.news.listRecent({ symbol, limit: 5 }))
+                .map(n => ({ title: n.title, sentiment: n.sentiment, publishedAt: n.publishedAt })),
+            ])))
+          : {};
+
         const run = await runner.runOnce({
           agentId, agentDef,
-          context: { trigger: 'EXIT_THRESHOLD', firedTriggers: result.fired, positions: wakePositions },
+          context: {
+            trigger: 'EXIT_THRESHOLD', firedTriggers: result.fired,
+            positions: wakePositions, news: wakeNews,
+          },
           ctx: {
             tradeDate, refPriceMap, tickPriceMap,
             nav: portfolio.nav, dayPnl, risk: agentDef.riskConfig,

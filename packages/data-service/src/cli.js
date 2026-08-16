@@ -4,6 +4,7 @@ import { createBroker } from './cdp/broker.js';
 import { createRepos } from './index.js';
 import { runIngestPrices } from './jobs/ingest_prices.js';
 import { runPollQuotes } from './jobs/poll_quotes.js';
+import { runIngestFundamentals } from './jobs/ingest_fundamentals.js';
 
 const COMMANDS = {
   async 'ingest-prices'({ broker, repos }) {
@@ -12,6 +13,10 @@ const COMMANDS = {
   async 'poll-quotes'({ broker, repos }) {
     const symbols = (await repos.universe.listActive()).map(s => s.symbol);
     return runPollQuotes({ broker, repos, symbols });
+  },
+  // Không cần broker — gọi HTTP thẳng tới Vietcap, không qua CDP.
+  async 'ingest-fundamentals'({ repos }) {
+    return runIngestFundamentals({ repos });
   },
 };
 

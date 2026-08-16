@@ -4,5 +4,5 @@
   "private": true,
   "type": "module",
   "main": "src/server.js",
-  "dependencies": { "@stockagents/db": "*" }
+  "dependencies": { "@stockagents/db": "*", "@stockagents/agent-runtime": "*" }
 }

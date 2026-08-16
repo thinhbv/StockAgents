@@ -5,7 +5,7 @@ import * as core from 'tradingview-mcp/core';
 import {
   createClient, loadConfig,
   createUniverseRepo, createMarketRepo, createOpsRepo, createEventsRepo,
-  createNewsRepo,
+  createNewsRepo, createFundamentalsRepo,
 } from '@stockagents/db';
 import { createBroker } from './cdp/broker.js';
 import { startScheduler } from './scheduler.js';
@@ -14,6 +14,7 @@ import { runIngestPrices } from './jobs/ingest_prices.js';
 import { runPollQuotes } from './jobs/poll_quotes.js';
 import { runPruneEvents } from './jobs/prune_events.js';
 import { runIngestNews } from './jobs/ingest_news.js';
+import { runIngestFundamentals } from './jobs/ingest_fundamentals.js';
 import { loadNewsSources, loadMarketIndices } from './news/sources.js';
 
 /**
@@ -46,6 +47,7 @@ export function createRepos(client) {
     ops: createOpsRepo(client),
     events: createEventsRepo(client),
     news: createNewsRepo(client),
+    fundamentals: createFundamentalsRepo(client),
   };
 }
 
@@ -105,6 +107,9 @@ async function main() {
         return result;
       },
       prune_events: () => runPruneEvents({ repos, retentionDays: cfg.eventLogRetentionDays }),
+
+      ingest_fundamentals: onTradingDayOnly('ingest_fundamentals',
+        () => runIngestFundamentals({ repos })),
 
       ingest_news: onTradingDayOnly('ingest_news', async () => {
         const sources = await loadNewsSources({ limit: 12 });

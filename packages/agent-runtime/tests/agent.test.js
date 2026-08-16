@@ -1,7 +1,7 @@
 import { test, before, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { withTestDb, resetTables } from '../../../tests/helpers/db.js';
-import { createAgentsRepo, createTradingRepo } from '@stockagents/db';
+import { createAgentsRepo, createTradingRepo, createNewsRepo, createFundamentalsRepo } from '@stockagents/db';
 import { loadAgentDefs } from '../src/agents/registry.js';
 import { buildContext } from '../src/agents/context.js';
 import { createRunner } from '../src/agents/runner.js';
@@ -12,7 +12,8 @@ import { DEFAULT_RISK } from '../src/sim/guardrails.js';
 const silent = { info() {}, warn() {}, error() {} };
 let client, repos, engine;
 const TABLES = ['position_lots', 'fills', 'orders', 'trade_outcomes', 'trades',
-  'positions', 'portfolio_snapshot', 'metrics_daily', 'agents', 'universe'];
+  'positions', 'portfolio_snapshot', 'metrics_daily', 'news_items', 'fundamentals_snapshot',
+  'agents', 'universe'];
 
 const ctx = () => ({
   tradeDate: '2026-07-20',
@@ -23,7 +24,10 @@ const ctx = () => ({
 
 before(async () => {
   client = await withTestDb();
-  repos = { agents: createAgentsRepo(client), trading: createTradingRepo(client) };
+  repos = {
+    agents: createAgentsRepo(client), trading: createTradingRepo(client),
+    news: createNewsRepo(client), fundamentals: createFundamentalsRepo(client),
+  };
   engine = createEngine({ repos, logger: silent });
 });
 beforeEach(async () => {
@@ -59,6 +63,59 @@ test('buildContext gói đủ danh mục, universe và ràng buộc', async () =
   // Trần 20% NAV (mặc định), trừ phí 0,15%, làm tròn lô chẵn 100 — không phải
   // 1000000000/100000=10000cp (sẽ vượt tỷ trọng tối đa một mã).
   assert.equal(c.universe[0].maxAffordableQty, 1900);
+});
+
+test('buildContext đưa tin THẬT (tiêu đề) vào context, không chỉ điểm sentiment', async () => {
+  await repos.news.upsertMany([
+    { symbol: 'HOSE:FPT', source: 'test', url: 'https://x/1', title: 'FPT trúng thầu dự án lớn',
+      summary: 'tóm tắt', sentiment: 0.6, publishedAt: new Date() },
+    { symbol: null, source: 'test', url: 'https://x/2', title: 'VN-Index vượt 1300 điểm',
+      sentiment: 0.3, publishedAt: new Date() },
+  ]);
+
+  const c = await buildContext({
+    repos, agentId: 'a1', tradeDate: '2026-07-20',
+    universe: [{ symbol: 'HOSE:FPT', sector: 'Công nghệ' }],
+    snapshots: new Map([['HOSE:FPT', { rsi14: 62.5 }]]),
+    priceMap: new Map([['HOSE:FPT', 100_000]]),
+  });
+
+  assert.equal(c.universe[0].news.length, 1);
+  assert.match(c.universe[0].news[0].title, /trúng thầu/, 'agent phải đọc được tiêu đề thật, không chỉ điểm số');
+  assert.equal(c.market.news.length, 1);
+  assert.match(c.market.news[0].title, /VN-Index/);
+});
+
+test('buildContext dựng được bình thường khi repos.news vắng mặt — news rỗng, không lỗi', async () => {
+  const { news, ...reposWithoutNews } = repos;
+  const c = await buildContext({
+    repos: reposWithoutNews, agentId: 'a1', tradeDate: '2026-07-20',
+    universe: [{ symbol: 'HOSE:FPT', sector: 'Công nghệ' }],
+    snapshots: new Map(), priceMap: new Map([['HOSE:FPT', 100_000]]),
+  });
+  assert.deepEqual(c.universe[0].news, []);
+  assert.deepEqual(c.market.news, []);
+});
+
+test('buildContext đưa chỉ số cơ bản THẬT (P/E, ROE...) vào context, không chỉ mảng rỗng', async () => {
+  await repos.fundamentals.insertSnapshot('HOSE:FPT', { pe: 11.6, roe: 0.26 });
+  const c = await buildContext({
+    repos, agentId: 'a1', tradeDate: '2026-07-20',
+    universe: [{ symbol: 'HOSE:FPT', sector: 'Công nghệ' }],
+    snapshots: new Map(), priceMap: new Map([['HOSE:FPT', 100_000]]),
+  });
+  assert.equal(c.universe[0].fundamentals.pe, 11.6);
+  assert.equal(c.universe[0].fundamentals.roe, 0.26);
+});
+
+test('buildContext dựng được bình thường khi chưa có snapshot cơ bản/repos.fundamentals vắng mặt — null, không lỗi', async () => {
+  const { fundamentals, ...reposWithoutFundamentals } = repos;
+  const c = await buildContext({
+    repos: reposWithoutFundamentals, agentId: 'a1', tradeDate: '2026-07-20',
+    universe: [{ symbol: 'HOSE:FPT', sector: 'Công nghệ' }],
+    snapshots: new Map(), priceMap: new Map([['HOSE:FPT', 100_000]]),
+  });
+  assert.equal(c.universe[0].fundamentals, null);
 });
 
 test('maxAffordableQty = 0 khi thiếu giá, không đoán bừa', async () => {

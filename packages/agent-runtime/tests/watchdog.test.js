@@ -1,7 +1,7 @@
 import { test, before, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { withTestDb, resetTables } from '../../../tests/helpers/db.js';
-import { createAgentsRepo, createTradingRepo, createTriggersRepo, createEventsRepo } from '@stockagents/db';
+import { createAgentsRepo, createTradingRepo, createTriggersRepo, createEventsRepo, createNewsRepo } from '@stockagents/db';
 import { createWatchdog } from '../src/orchestrator/watchdog.js';
 import { createEngine } from '../src/sim/engine.js';
 import { applyBuy, refreshSellable } from '../src/sim/portfolio.js';
@@ -10,7 +10,7 @@ import { DEFAULT_RISK } from '../src/sim/guardrails.js';
 const silent = { info() {}, warn() {}, error() {} };
 let client, repos, engine;
 const TABLES = ['trigger_log', 'position_lots', 'fills', 'orders', 'trade_outcomes',
-  'trades', 'positions', 'portfolio_snapshot', 'metrics_daily', 'event_log', 'agents', 'universe'];
+  'trades', 'positions', 'portfolio_snapshot', 'metrics_daily', 'event_log', 'news_items', 'agents', 'universe'];
 
 const agentDef = { id: 'a1', personaPrompt: 'p', riskConfig: DEFAULT_RISK };
 
@@ -40,6 +40,7 @@ before(async () => {
   repos = {
     agents: createAgentsRepo(client), trading: createTradingRepo(client),
     triggers: createTriggersRepo(client), events: createEventsRepo(client),
+    news: createNewsRepo(client),
   };
   engine = createEngine({ repos, logger: silent });
 });
@@ -130,6 +131,34 @@ test('context lúc đánh thức mang theo qtyTotal/qtySellable — agent phải
   assert.equal(seenContext.positions[0].symbol, 'HOSE:FPT');
   assert.equal(seenContext.positions[0].qtyTotal, 1000);
   assert.ok(Number.isFinite(seenContext.positions[0].qtySellable));
+});
+
+test('context lúc đánh thức mang theo tin THẬT của mã vừa nổ trigger, không chỉ điểm sentiment', async () => {
+  await repos.news.upsertMany([
+    { symbol: 'HOSE:FPT', source: 'test', url: 'https://x/1', title: 'FPT bị điều tra thuế',
+      sentiment: -0.8, publishedAt: new Date() },
+  ]);
+
+  let seenContext = null;
+  const runner = { async runOnce({ context }) { seenContext = context; return { status: 'OK', results: [] }; } };
+  const wd = createWatchdog({ repos, engine, runner, logger: silent });
+
+  await wd.tick(base({ tickPriceMap: new Map([['HOSE:FPT', 108_000]]) }));
+
+  assert.equal(seenContext.news['HOSE:FPT'].length, 1);
+  assert.match(seenContext.news['HOSE:FPT'][0].title, /điều tra thuế/,
+    'agent phải đọc được tiêu đề tin thật đã khiến vị thế bị đánh thức, không chỉ một con số sentiment');
+});
+
+test('context lúc đánh thức vẫn dựng được khi repos.news vắng mặt — news rỗng, không lỗi', async () => {
+  const { news, ...reposWithoutNews } = repos;
+  let seenContext = null;
+  const runner = { async runOnce({ context }) { seenContext = context; return { status: 'OK', results: [] }; } };
+  const wd = createWatchdog({ repos: reposWithoutNews, engine, runner, logger: silent });
+
+  await wd.tick(base({ tickPriceMap: new Map([['HOSE:FPT', 108_000]]) }));
+
+  assert.deepEqual(seenContext.news, {});
 });
 
 test('chống rung: nhịp thứ hai trong 30 phút không đánh thức lại', async () => {

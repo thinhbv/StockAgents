@@ -4,3 +4,4 @@ node_modules/
 logs/
 coverage/
 tradingview_mcp/
+/daily_stock_analysis

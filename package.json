@@ -12,13 +12,15 @@
     "data-service": "node packages/data-service/src/index.js",
     "ingest:prices": "node packages/data-service/src/cli.js ingest-prices",
     "poll:quotes": "node packages/data-service/src/cli.js poll-quotes",
+    "ingest:fundamentals": "node packages/data-service/src/cli.js ingest-fundamentals",
     "sim:session": "node packages/agent-runtime/src/cli.js",
     "sim:day": "node packages/agent-runtime/src/cli_day.js",
     "sim:all": "node packages/agent-runtime/src/cli_all.js",
     "watch:tick": "node packages/agent-runtime/src/cli_watch.js --mode tick",
     "watch:close": "node packages/agent-runtime/src/cli_watch.js --mode close",
     "report:day": "node packages/api/src/cli_report.js",
-    "api": "node packages/api/src/server.js"
+    "api": "node packages/api/src/server.js",
+    "telegram-bot": "node packages/api/src/telegram_bot.js"
   },
   "dependencies": {
     "dotenv": "^16.6.1",

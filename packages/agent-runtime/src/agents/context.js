@@ -25,6 +25,47 @@ function maxAffordableQty({ priceVnd, cash, nav, maxPositionPctNav }) {
   return Math.max(0, qty);
 }
 
+const NEWS_LOOKBACK_DAYS = 3;
+const NEWS_PER_SYMBOL = 5;
+const NEWS_MARKET_MAX = 10;
+
+/**
+ * Gom tin tức gần đây, TÁCH theo mã và tin chung thị trường (symbol NULL).
+ *
+ * Chấm điểm bằng từ điển (news/sentiment.js) chỉ đủ để watchdog biết CÓ NÊN
+ * đánh thức agent hay không — không phải một bản phân tích. Bản thân agent
+ * phải tự đọc tiêu đề/tóm tắt thật và tự đánh giá, đúng chủ đích ban đầu của
+ * hệ thống. Trước bản sửa này, context chưa từng đưa tin thật vào — agent chỉ
+ * thấy được điểm sentiment qua watchdog, chưa bao giờ đọc được nội dung tin.
+ *
+ * Một câu truy vấn duy nhất (không phải một câu/mã) rồi nhóm ở client — tổng
+ * lượng tin một ngày chỉ vài chục bài (xem ingest_news.js), không đáng để
+ * query 30 lần cho 30 mã trong universe.
+ */
+async function fetchNews(repos) {
+  const bySymbol = new Map();
+  const market = [];
+  if (!repos.news) return { bySymbol, market };
+
+  const since = new Date(Date.now() - NEWS_LOOKBACK_DAYS * 86_400_000);
+  const items = await repos.news.listRecent({ since, limit: 200 });
+  for (const it of items) {
+    if (!it.symbol) {
+      if (market.length < NEWS_MARKET_MAX) market.push(it);
+      continue;
+    }
+    if (!bySymbol.has(it.symbol)) bySymbol.set(it.symbol, []);
+    const list = bySymbol.get(it.symbol);
+    if (list.length < NEWS_PER_SYMBOL) list.push(it);
+  }
+  return { bySymbol, market };
+}
+
+const toContextNews = (n) => ({
+  title: n.title, summary: n.summary, sentiment: n.sentiment,
+  publishedAt: n.publishedAt, source: n.source,
+});
+
 /**
  * Dựng context đưa cho agent.
  *
@@ -45,11 +86,18 @@ export async function buildContext({
 
   // repos.market vắng mặt trong test context nhẹ (spec §3.2 kiểu) — context vẫn dựng được.
   const indices = repos.market ? await repos.market.getLatestIndices() : [];
+  const news = await fetchNews(repos);
+  // Chỉ số cơ bản (P/E, ROE, cổ tức...) — dữ liệu duy nhất hệ thống thiếu hẳn
+  // trước bản sửa này (không phải quên nối dây như tin tức, mà chưa từng thu
+  // thập). MỘT câu truy vấn cho cả universe, giống news, không phải 30 câu.
+  const fundamentals = repos.fundamentals
+    ? await repos.fundamentals.getLatestForSymbols(universe.map(u => u.symbol))
+    : new Map();
 
   return {
     asOf: tradeDate,
     trigger,
-    market: { indices },
+    market: { indices, news: news.market.map(toContextNews) },
     universe: universe.map(u => {
       const indicators = snapshots.get(u.symbol) ?? {};
       const lastPriceVnd = priceMap.get(u.symbol) ?? null;
@@ -57,6 +105,11 @@ export async function buildContext({
         symbol: u.symbol,
         sector: u.sector ?? null,
         lastPriceVnd,
+        // Tin thật của MÃ NÀY — đọc và tự đánh giá, không phải chỉ điểm số.
+        news: (news.bySymbol.get(u.symbol) ?? []).map(toContextNews),
+        // Chỉ số cơ bản quý gần nhất (P/E, P/B, ROE, ROA, cổ tức, nợ/vốn chủ,
+        // vốn hoá) — null nếu chưa ingest được cho mã này, không đoán bừa.
+        fundamentals: fundamentals.get(u.symbol) ?? null,
         // TRẦN khối lượng còn mua được cho mã này (đã trừ phí, đã làm tròn lô
         // chẵn) — không phải gợi ý nên mua bao nhiêu. Không dùng hết mức này
         // cho một mã; dàn trải theo mức độ tin tưởng vào từng cơ hội.

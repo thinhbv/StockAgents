@@ -4,6 +4,9 @@ const TZ = 'Asia/Ho_Chi_Minh';
 
 export const SCHEDULES = [
   { name: 'ingest_prices', cron: '30 8 * * 1-5' },
+  // Chỉ số tài chính cơ bản đổi theo quý, không cần lịch dày như giá — 1
+  // lần/ngày là đủ tươi. Đặt sau ingest_prices, trước ingest_news.
+  { name: 'ingest_fundamentals', cron: '35 8 * * 1-5' },
   { name: 'ingest_news', cron: '45 8 * * 1-5' },
   // poll_quotes lấy tick MỚI xong thì watch_tick theo dõi ngay tick đó — mở
   // phiên nếu agent chưa mở, rồi watchdog tick 1 lần. Không đăng ký cron

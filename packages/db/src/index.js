@@ -11,3 +11,4 @@ export { createTradingRepo } from './repositories/trading.js';
 export { createTriggersRepo } from './repositories/triggers.js';
 export { createLessonsRepo } from './repositories/lessons.js';
 export { createNewsRepo } from './repositories/news.js';
+export { createFundamentalsRepo } from './repositories/fundamentals.js';

@@ -364,6 +364,33 @@ npm run report:day -- --date 2026-08-01
 Bảng xếp hạng **luôn in ra màn hình** dù Telegram có gửi được hay không —
 báo cáo hỏng không được làm mất thông tin. Thiếu token thì reporter tự tắt.
 
+### Agent điều phối — trò chuyện qua Telegram
+
+Ngoài báo cáo một chiều ở trên, có thể chạy một agent điều phối lắng nghe và
+trả lời tin nhắn Telegram — hỏi về trạng thái/vị thế/quyết định của 5 agent,
+và thực hiện đúng hai loại điều chỉnh: đổi model, đổi tỷ trọng tối đa một mã
+hoặc ngưỡng dừng lỗ ngày của một agent.
+
+```bash
+npm run telegram-bot
+```
+
+Dùng chung `TELEGRAM_TOKEN`/`TELEGRAM_CHAT_ID` đã cấu hình ở trên — **chỉ trả
+lời đúng chat đó**, ai khác nhắn vào bot cũng bị bỏ qua. Cần `DATABASE_URL_READONLY`
+(mục 2) vì tiến trình này chỉ đọc DB; mọi thay đổi thật sự đi qua
+`config/agents.json`, áp dụng từ phiên chạy tiếp theo — giống hệt cách sửa
+trên dashboard.
+
+**Cố ý KHÔNG làm được**: tự đặt lệnh mua/bán thay agent, đổi persona/phong
+cách của agent. Giữ đúng nguyên tắc "agent tự lý luận, không ai định hướng
+trước" — kể cả agent điều phối cũng không được định hướng lại các agent kia.
+
+Đây là tiến trình riêng, chạy song song với `data-service`/`api`, không phụ
+thuộc cái nào đang chạy hay không. Model dùng cho agent điều phối cấu hình
+qua `COORDINATOR_PROVIDER`/`COORDINATOR_MODEL` (mặc định `anthropic`/
+`claude-sonnet-5`) — khác 5 agent giao dịch, vì đây là vai trò tư vấn/tổng
+hợp nên dùng model mạnh hơn Haiku.
+
 ---
 
 ## 8. Tuỳ biến
