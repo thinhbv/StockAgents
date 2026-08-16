@@ -251,11 +251,14 @@ Tiến trình này giữ lịch và tự gọi mọi thứ, theo giờ Việt Na
 để luôn thấy đúng tick vừa ghi. STOP_LOSS/TRAILING chạm ngưỡng thì bán ngay
 trong vòng tối đa 5 phút, không đợi tới cuối phiên.
 
-Muốn chạy nền lâu dài thì dùng PM2 với cấu hình có sẵn:
+Muốn chạy nền lâu dài thì dùng PM2 với cấu hình có sẵn — khởi động cả
+`data-service` lẫn agent điều phối Telegram (`telegram-bot`) cùng lúc, tự
+restart nếu crash:
 
 ```bash
 npx pm2 start ecosystem.config.cjs
 npx pm2 logs data-service
+npx pm2 logs telegram-bot
 ```
 
 **Ngày nghỉ lễ:** cron chỉ loại được thứ Bảy và Chủ nhật. Nghỉ Tết rơi vào
@@ -386,7 +389,9 @@ cách của agent. Giữ đúng nguyên tắc "agent tự lý luận, không ai 
 trước" — kể cả agent điều phối cũng không được định hướng lại các agent kia.
 
 Đây là tiến trình riêng, chạy song song với `data-service`/`api`, không phụ
-thuộc cái nào đang chạy hay không. Model dùng cho agent điều phối cấu hình
+thuộc cái nào đang chạy hay không — `ecosystem.config.cjs` đã khai báo sẵn
+(mục 6), `npx pm2 start ecosystem.config.cjs` khởi động cả hai cùng lúc.
+Model dùng cho agent điều phối cấu hình
 qua `COORDINATOR_PROVIDER`/`COORDINATOR_MODEL` (mặc định `anthropic`/
 `claude-sonnet-5`) — khác 5 agent giao dịch, vì đây là vai trò tư vấn/tổng
 hợp nên dùng model mạnh hơn Haiku.
