@@ -390,7 +390,7 @@ trước" — kể cả agent điều phối cũng không được định hư�
 
 Đây là tiến trình riêng, chạy song song với `data-service`/`api`, không phụ
 thuộc cái nào đang chạy hay không — `ecosystem.config.cjs` đã khai báo sẵn
-(mục 6), `npx pm2 start ecosystem.config.cjs` khởi động cả hai cùng lúc.
+(mục 5), `npx pm2 start ecosystem.config.cjs` khởi động cả hai cùng lúc.
 Model dùng cho agent điều phối cấu hình
 qua `COORDINATOR_PROVIDER`/`COORDINATOR_MODEL` (mặc định `anthropic`/
 `claude-sonnet-5`) — khác 5 agent giao dịch, vì đây là vai trò tư vấn/tổng
