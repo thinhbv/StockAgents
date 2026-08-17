@@ -151,7 +151,16 @@ async function main() {
 // Chỉ chạy scheduler khi file này là entry point.
 // `cli.js` import `createRepos` từ đây — không có guard thì chạy CLI
 // sẽ vô tình khởi động luôn scheduler.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+//
+// PM2 (fork mode) không spawn `node index.js` trực tiếp — nó spawn
+// ProcessContainerFork.js rồi require() script đích từ bên trong, nên
+// process.argv[1] trỏ tới wrapper của PM2 chứ không phải file này. So khớp
+// import.meta.url với process.argv[1] vì vậy luôn sai dưới PM2 và main()
+// không bao giờ chạy (guard tưởng đây không phải entry point). `pm_id` chỉ
+// tồn tại trong process con do PM2 quản lý, dùng nó làm lối thoát cho case đó.
+const isEntryPoint = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isUnderPm2 = process.env.pm_id !== undefined;
+if (isEntryPoint || isUnderPm2) {
   main().catch((err) => {
     console.error('[data-service] lỗi khởi động:', err);
     process.exit(1);
