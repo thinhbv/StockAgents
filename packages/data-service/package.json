@@ -6,6 +6,6 @@
   "main": "src/index.js",
   "dependencies": {
     "@stockagents/db": "*",
-    "tradingview-mcp": "file:../../tradingview_mcp"
+    "tradingview-mcp": "file:../../tradingview-mcp"
   }
 }

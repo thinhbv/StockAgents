@@ -56,7 +56,17 @@ async function onMessage(text) {
   await reporter.send(actionResult ? `${reply}\n\n${actionResult}` : reply);
 }
 
-const poll = createTelegramPoll({ token, allowedChatId: chatId, onMessage });
+// Lấy id/username của chính bot MỘT LẦN lúc khởi động — dùng để lọc tin
+// trong nhóm: chỉ trả lời khi được @mention hoặc reply trực tiếp vào tin
+// của bot, không tự trả lời mọi tin nhắn của người khác trong chat.
+const me = await fetch(`https://api.telegram.org/bot${token}/getMe`).then(r => r.json());
+if (!me.ok) {
+  console.error(`Không lấy được thông tin bot (getMe): ${me.description ?? 'lỗi không rõ'}`);
+  process.exit(1);
+}
+const { id: botId, username: botUsername } = me.result;
+
+const poll = createTelegramPoll({ token, allowedChatId: chatId, onMessage, botId, botUsername });
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, async () => {

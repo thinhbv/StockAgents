@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import * as core from 'tradingview-mcp/core';
 import {
   createClient, loadConfig,
@@ -25,9 +25,18 @@ import { loadNewsSources, loadMarketIndices } from './news/sources.js';
  */
 function spawnTask(script, args = []) {
   return new Promise((resolve) => {
+    // shell: true trên Windows tra biến môi trường bằng đúng case 'ComSpec'.
+    // PM2 dựng lại env cho tiến trình con và không giữ tính không-phân-biệt-
+    // hoa-thường của Windows cho biến môi trường, key thường thành 'COMSPEC'
+    // (toàn hoa) — Node tra 'ComSpec' không thấy, spawn báo ENOENT dù cmd.exe
+    // vẫn tồn tại. Tự dò cả hai biến thể, có fallback cứng, thay vì để
+    // Node/libuv tự đoán.
+    const shell = process.platform === 'win32'
+      ? (process.env.ComSpec || process.env.COMSPEC || 'C:\\Windows\\System32\\cmd.exe')
+      : true;
     const child = spawn('npm', ['run', script, '--', ...args], {
-      cwd: new URL('../../../', import.meta.url).pathname,
-      stdio: 'inherit', shell: process.platform === 'win32',
+      cwd: fileURLToPath(new URL('../../../', import.meta.url)),
+      stdio: 'inherit', shell,
     });
     child.on('exit', (code) => {
       if (code !== 0) console.error(`[scheduler] ${script} thoát với mã ${code}`);

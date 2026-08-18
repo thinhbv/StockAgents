@@ -6,7 +6,7 @@
  * tham số. `runIngestNews` nhận `sources` để test không phải gọi mạng.
  */
 
-const BASE = new URL('../../../../tradingview_mcp/news/sources/', import.meta.url);
+const BASE = new URL('../../../../tradingview-mcp/news/sources/', import.meta.url);
 
 const MODULES = {
   cafef: 'cafef.js',
@@ -42,7 +42,7 @@ export async function loadNewsSources({ limit = 12, logger = console } = {}) {
   if (Object.keys(sources).length === 0) {
     throw new Error(
       'loadNewsSources: không nạp được nguồn tin nào. Kiểm tra thư mục ' +
-      'tradingview_mcp/news/sources/ còn tồn tại không.');
+      'tradingview-mcp/news/sources/ còn tồn tại không.');
   }
   return sources;
 }

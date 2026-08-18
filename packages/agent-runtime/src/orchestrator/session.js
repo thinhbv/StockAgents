@@ -210,17 +210,16 @@ export function createOrchestrator({ client, logger = console }) {
     const symbols = universe.map(u => u.symbol);
     const map = new Map();
     if (symbols.length === 0) return map;
-    const { rows: tsRows } = await client.query(
-      `SELECT MIN(ts) AS ts FROM quote_tick
-       WHERE symbol = ANY($1) AND ts AT TIME ZONE 'Asia/Ho_Chi_Minh' >= $2::date
-         AND ts AT TIME ZONE 'Asia/Ho_Chi_Minh' < ($2::date + 1)`,
-      [symbols, tradeDate],
-    );
-    const firstTs = tsRows[0]?.ts;
-    if (!firstTs) return map;
+    // Một câu query DUY NHẤT (DISTINCT ON), không tách thành MIN(ts) rồi so
+    // khớp lại `ts = $2` — cột ts lưu tới micro-giây nhưng JS Date chỉ giữ
+    // mili-giây, giá trị mang ra rồi đưa lại làm tham số sẽ mất phần đuôi
+    // (vd .661770 -> .661) nên `ts = $2` không bao giờ khớp, luôn trả 0 dòng.
     const { rows } = await client.query(
-      `SELECT symbol, price FROM quote_tick WHERE symbol = ANY($1) AND ts = $2`,
-      [symbols, firstTs],
+      `SELECT DISTINCT ON (symbol) symbol, price FROM quote_tick
+       WHERE symbol = ANY($1) AND ts AT TIME ZONE 'Asia/Ho_Chi_Minh' >= $2::date
+         AND ts AT TIME ZONE 'Asia/Ho_Chi_Minh' < ($2::date + 1)
+       ORDER BY symbol, ts ASC`,
+      [symbols, tradeDate],
     );
     for (const r of rows) map.set(r.symbol, toVnd(Number(r.price)));
     return map;
