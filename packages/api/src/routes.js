@@ -1,5 +1,6 @@
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { priceBand, parseSymbol } from '@stockagents/agent-runtime/src/sim/vn_rules.js';
 
 const MAX_LIMIT = 500;
 
@@ -33,6 +34,40 @@ export function createRoutes({
       return { date, state: 'UNKNOWN', dataCapturedAt: null, note: null };
     }
     return { date, state: s.state, dataCapturedAt: s.data_captured_at, note: s.note };
+  }
+
+  /** Bảng giá 30 mã trong universe agent đang theo dõi — dùng cho tab thị trường. */
+  async function quotes() {
+    const universe = await repos.universe.listActive();
+    const symbols = universe.map(u => u.symbol);
+    const [priceRows, refMap] = await Promise.all([
+      repos.market.getLatestQuotes(symbols),
+      repos.market.getRefPrices(symbols),
+    ]);
+    const priceMap = new Map(priceRows.map(r => [r.symbol, r]));
+
+    return {
+      quotes: universe.map(u => {
+        const p = priceMap.get(u.symbol);
+        const ref = refMap.get(u.symbol) ?? null;
+        const price = p?.price ?? null;
+        const changePct = price !== null && ref ? ((price - ref) / ref) * 100 : null;
+        // Trần/sàn suy ra từ giá tham chiếu theo đúng luật biên độ dao động
+        // (priceBand) — TradingView không trả thẳng 2 giá trị này qua CDP,
+        // nhưng chúng tính được 100% từ refPrice + sàn niêm yết, không cần
+        // gọi thêm nguồn nào khác.
+        const { exchange } = parseSymbol(u.symbol);
+        const band = ref ? priceBand(ref, exchange) : null;
+        return {
+          symbol: u.symbol, name: u.name, sector: u.sector,
+          price, refPrice: ref,
+          floor: band?.floor ?? null, ceiling: band?.ceiling ?? null,
+          changePct: changePct === null ? null : Math.round(changePct * 100) / 100,
+          volume: p?.volume ?? null,
+          ts: p?.ts ?? null,
+        };
+      }),
+    };
   }
 
   async function leaderboard() {
@@ -287,6 +322,6 @@ export function createRoutes({
 
   return {
     session, leaderboard, agent, positions, decisions, lessons, events, history,
-    modelCatalog, agentConfig, updateAgentConfig, updateAgentRisk,
+    modelCatalog, agentConfig, updateAgentConfig, updateAgentRisk, quotes,
   };
 }

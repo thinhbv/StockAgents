@@ -22,7 +22,41 @@
   </dl>
 </header>
 
-<main class="layout">
+<nav class="tabs" role="tablist" aria-label="Chế độ xem">
+  <button type="button" id="tab-btn-market" class="tab-btn" role="tab" aria-selected="true" aria-controls="tab-market">Bảng giá thị trường</button>
+  <button type="button" id="tab-btn-agents" class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-agents">AI Agents</button>
+</nav>
+
+<section id="tab-market" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-market">
+  <!--
+    TradingView không cấp phép dữ liệu VN cho widget theo danh sách mã tùy
+    chọn (Market Quotes/Symbol Overview đều báo lỗi cho mã HOSE) — chỉ
+    Screener (toàn thị trường, không lọc được theo danh sách) là có dữ liệu
+    VN thật. Nên bảng này tự dựng, đọc thẳng /api/quotes — CÙNG một nguồn
+    quote_tick mà agent dùng để giao dịch, tự làm mới mỗi 15s.
+  -->
+  <h2 class="eyebrow">Bảng giá — danh mục agent</h2>
+  <table class="price-board" id="quotes-table">
+    <thead>
+      <tr>
+        <th scope="col">Mã</th>
+        <th scope="col">Tên</th>
+        <th scope="col">Ngành</th>
+        <th scope="col" class="num">Sàn</th>
+        <th scope="col" class="num">Giá</th>
+        <th scope="col" class="num">Trần</th>
+        <th scope="col" class="num">Thay đổi</th>
+        <th scope="col" class="num">Khối lượng</th>
+        <th scope="col" class="num">Cập nhật</th>
+      </tr>
+    </thead>
+    <tbody id="quotes-body">
+      <tr class="empty"><td colspan="9">Đang tải…</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<main id="tab-agents" class="tab-panel layout" role="tabpanel" aria-labelledby="tab-btn-agents" hidden>
 
   <section class="board" aria-labelledby="board-title">
     <h2 id="board-title" class="eyebrow">Bảng xếp hạng</h2>
@@ -97,6 +131,70 @@
 
 </main>
 
+<script>
+  // Chuyển tab — tách riêng khỏi app.js (module xử lý dữ liệu AI Agents) để
+  // không đụng vào luồng polling/SSE hiện có. app.js vẫn chạy nền bình
+  // thường khi tab đang ẩn (display:none không dừng JS), chỉ không hiển thị.
+  const tabs = [
+    { btn: document.getElementById('tab-btn-market'), panel: document.getElementById('tab-market') },
+    { btn: document.getElementById('tab-btn-agents'), panel: document.getElementById('tab-agents') },
+  ];
+  for (const { btn, panel } of tabs) {
+    btn.addEventListener('click', () => {
+      for (const t of tabs) {
+        const active = t.panel === panel;
+        t.btn.setAttribute('aria-selected', String(active));
+        t.panel.hidden = !active;
+      }
+    });
+  }
+
+  // Bảng giá thị trường — tự đọc /api/quotes mỗi 15s. Tách riêng khỏi app.js
+  // vì đây là dữ liệu khác luồng (giá tick thô, không phải trạng thái agent).
+  const QUOTES_REFRESH_MS = 15000;
+  const vndFmt = (n) => n === null || n === undefined ? '—' : Math.round(n).toLocaleString('vi-VN');
+  const pctFmt = (n) => n === null || n === undefined ? '—' : `${n > 0 ? '+' : ''}${n}%`;
+  const volFmt = (n) => {
+    if (n === null || n === undefined) return '—';
+    if (n >= 1_000_000) return `${(n / 1_000_000).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}M`;
+    if (n >= 1_000) return `${(n / 1_000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}K`;
+    return n.toLocaleString('vi-VN');
+  };
+  const timeFmt = (ts) => ts
+    ? new Date(ts).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
+    : '—';
+
+  async function refreshQuotes() {
+    const body = document.getElementById('quotes-body');
+    try {
+      const res = await fetch('/api/quotes');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { quotes } = await res.json();
+      if (quotes.length === 0) {
+        body.innerHTML = '<tr class="empty"><td colspan="9">Chưa có dữ liệu giá.</td></tr>';
+        return;
+      }
+      body.innerHTML = quotes.map((q) => {
+        const dir = q.changePct === null ? 'flat' : q.changePct > 0 ? 'up' : q.changePct < 0 ? 'down' : 'flat';
+        return `<tr>
+          <td>${q.symbol.replace('HOSE:', '')}</td>
+          <td>${q.name ?? '—'}</td>
+          <td>${q.sector ?? '—'}</td>
+          <td class="num san">${vndFmt(q.floor)}</td>
+          <td class="num">${vndFmt(q.price)}</td>
+          <td class="num tran">${vndFmt(q.ceiling)}</td>
+          <td class="num ${dir}">${pctFmt(q.changePct)}</td>
+          <td class="num">${volFmt(q.volume)}</td>
+          <td class="num">${timeFmt(q.ts)}</td>
+        </tr>`;
+      }).join('');
+    } catch (err) {
+      body.innerHTML = `<tr class="empty"><td colspan="9">Không tải được giá: ${err.message}</td></tr>`;
+    }
+  }
+  refreshQuotes();
+  setInterval(refreshQuotes, QUOTES_REFRESH_MS);
+</script>
 <script type="module" src="/app.js"></script>
 </body>
 </html>

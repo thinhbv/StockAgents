@@ -90,6 +90,51 @@ body {
 .tag-bad     { color: var(--giam); }
 .tag-unknown { color: var(--muted); }
 
+/* ---------- Tab ---------- */
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 20px;
+  background: var(--board-2);
+  border-bottom: 1px solid var(--rule);
+  position: sticky;
+  top: 56px;
+  z-index: 9;
+}
+
+.tab-btn {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 12px 6px;
+  cursor: pointer;
+  margin-right: 22px;
+}
+.tab-btn:hover { color: var(--ink); }
+.tab-btn[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--tang);
+}
+
+.tab-panel[hidden] { display: none; }
+
+#tab-market {
+  height: calc(100vh - 56px - 45px);
+  padding: 16px 20px;
+}
+#tab-market .tradingview-widget-container,
+#tab-market .tradingview-widget-container__widget {
+  height: 100%;
+}
+
 /* ---------- Bố cục ---------- */
 
 .layout {
@@ -161,6 +206,8 @@ body {
 .up   { color: var(--tang); }
 .down { color: var(--giam); }
 .flat { color: var(--tham-chieu); }
+.tran { color: var(--tran); }
+.san  { color: var(--san); }
 
 /* Nháy ô khi giá trị đổi — đúng cách bảng giá thật báo có biến động. */
 @keyframes flash-up   { from { background: rgba(22,199,132,.28); } to { background: transparent; } }

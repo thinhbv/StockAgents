@@ -126,9 +126,31 @@ export function createMarketRepo(client) {
     return map;
   }
 
+  async function getLatestQuotes(symbols) {
+    if (!symbols || symbols.length === 0) return [];
+    const { rows } = await client.query(
+      `SELECT DISTINCT ON (symbol) symbol, price, volume, ts FROM quote_tick
+       WHERE symbol = ANY($1) ORDER BY symbol, ts DESC`, [symbols]);
+    return rows.map(r => ({
+      symbol: r.symbol, price: Number(r.price),
+      volume: r.volume === null ? null : Number(r.volume), ts: r.ts,
+    }));
+  }
+
+  /** Giá tham chiếu = close phiên gần nhất đã có trong ohlcv_daily (thường là hôm trước, vì ingest_prices chạy lúc 8h30 trước giờ mở cửa nên chưa có bar hôm nay). */
+  async function getRefPrices(symbols) {
+    const map = new Map();
+    if (!symbols || symbols.length === 0) return map;
+    const { rows } = await client.query(
+      `SELECT DISTINCT ON (symbol) symbol, close FROM ohlcv_daily
+       WHERE symbol = ANY($1) ORDER BY symbol, trade_date DESC`, [symbols]);
+    for (const r of rows) map.set(r.symbol, Number(r.close));
+    return map;
+  }
+
   return {
     insertIndexSnapshots, getLatestIndices,
     upsertOhlcvBars, getLatestBar, insertIndicatorSnapshot,
-    getLatestIndicatorAgeMinutes, insertQuoteTicks, getLatestPrices,
+    getLatestIndicatorAgeMinutes, insertQuoteTicks, getLatestPrices, getRefPrices, getLatestQuotes,
   };
 }
