@@ -1,6 +1,6 @@
 import {
   createAgentsRepo, createTradingRepo, createUniverseRepo, createMarketRepo, createNewsRepo,
-  createFundamentalsRepo,
+  createFundamentalsRepo, createEventsRepo,
 } from '@stockagents/db';
 import { toVnd } from './sim/vn_rules.js';
 import { createEngine } from './sim/engine.js';
@@ -9,6 +9,7 @@ import { buildContext } from './agents/context.js';
 import { refreshSellable } from './sim/portfolio.js';
 import { closeSession } from './sim/pnl.js';
 import { DEFAULT_RISK } from './sim/guardrails.js';
+import { EVENTS } from './orchestrator/events.js';
 
 /**
  * Chạy trọn một phiên giả lập cho MỘT agent.
@@ -26,6 +27,7 @@ export async function runSession({
     market: createMarketRepo(client),
     news: createNewsRepo(client),
     fundamentals: createFundamentalsRepo(client),
+    events: createEventsRepo(client),
   };
 
   const universe = await repos.universe.listActive();
@@ -80,6 +82,20 @@ export async function runSession({
   logger.info(
     `[session] ${agentId} ${tradeDate}: ${run.results.length} lệnh, ` +
     `NAV ${close.nav.toLocaleString('vi-VN')} (${close.totalReturnPct}%)`);
+
+  // Dashboard chỉ tự làm mới bảng khi thấy order.filled/metrics.updated qua
+  // SSE (xem app.js) — thiếu hai dòng này thì lô lệnh mở phiên vẫn khớp và
+  // ghi DB bình thường, nhưng người xem dashboard phải tự F5 mới thấy NAV
+  // mới, vì không có gì đẩy qua stream.
+  for (const [i, r] of run.results.entries()) {
+    if (r.status !== 'FILLED') continue;
+    const d = run.decisions[i];
+    await repos.events.appendEvent({
+      type: EVENTS.ORDER_FILLED, agentId, symbol: d?.symbol,
+      payload: { action: d?.action, qty: d?.qty, priceVnd: r.fillPriceVnd, orderId: r.orderId },
+    });
+  }
+  await repos.events.appendEvent({ type: EVENTS.METRICS_UPDATED, agentId, payload: { ...close } });
 
   return {
     status: run.status, agentId, tradeDate,

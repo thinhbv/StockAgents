@@ -53,6 +53,23 @@ test('phiên với quyết định MUA: vị thế hình thành, NAV phản ánh
   assert.ok(r.close.marketValue > 0);
 });
 
+test('lệnh khớp phát sự kiện order.filled + metrics.updated — thiếu thì dashboard không tự làm mới, phải F5', async () => {
+  const provider = createStubProvider({ script: [[{
+    action: 'BUY', symbol: 'HOSE:FPT', quantity: 1000, orderType: 'MARKET',
+    limitPriceVnd: null, confidence: 0.7, reason: 'stub mua', exitPlan: { takeProfitPct: 8, stopLossPct: -4 },
+  }]] });
+
+  await runSession({ client, agentId: 'a1', tradeDate: '2026-07-20', provider, logger: silent });
+
+  const { rows } = await client.query(
+    `SELECT type, agent_id, symbol FROM event_log WHERE agent_id = 'a1' ORDER BY id`);
+  const filled = rows.find(r => r.type === 'order.filled');
+  const metrics = rows.find(r => r.type === 'metrics.updated');
+  assert.ok(filled, 'phải có sự kiện order.filled khi lệnh khớp');
+  assert.equal(filled.symbol, 'HOSE:FPT');
+  assert.ok(metrics, 'phải có sự kiện metrics.updated để dashboard tự refresh bảng');
+});
+
 test('giá được chuyển sang VND đúng đơn vị', async () => {
   const provider = createStubProvider({ script: [[{
     action: 'BUY', symbol: 'HOSE:FPT', quantity: 1000, orderType: 'MARKET',
