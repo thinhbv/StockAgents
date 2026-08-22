@@ -77,6 +77,25 @@ test('bookkeeping insert lỗi khiến toàn bộ migration (kể cả DDL) bị
   }
 });
 
+test('hai tiến trình cùng gọi runMigrations() một lúc trên schema trắng không đụng độ nhau', async () => {
+  // Đúng kịch bản thật: data-service, api, telegram-bot cùng khởi động và
+  // cùng tự chạy migration. Không có khoá advisory, cả hai sẽ cùng thấy
+  // schema_migrations trống rồi cùng CREATE TABLE — một bên lỗi "relation
+  // already exists". Dùng client THỨ HAI (kết nối riêng) để mô phỏng đúng
+  // hai tiến trình khác nhau, không phải hai lời gọi trên cùng một client.
+  await client.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+  const client2 = createClient(cfg.databaseUrlTest);
+  try {
+    const [a, b] = await Promise.all([runMigrations(client), runMigrations(client2)]);
+    // Tổng số file áp dụng qua CẢ HAI lời gọi phải đúng bằng số migration có
+    // — không file nào bị áp dụng hai lần (advisory lock tuần tự hoá đúng).
+    assert.deepEqual(new Set([...a, ...b]).size, a.length + b.length);
+    assert.ok(a.length + b.length > 0);
+  } finally {
+    await client2.close();
+  }
+});
+
 test('withTransaction rollback khi callback ném lỗi', async () => {
   await client.query('CREATE TABLE IF NOT EXISTS tx_probe (v INT)');
   await assert.rejects(

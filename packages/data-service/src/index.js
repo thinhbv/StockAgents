@@ -3,15 +3,16 @@ import { spawn } from 'node:child_process';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import * as core from 'tradingview-mcp/core';
 import {
-  createClient, loadConfig,
+  createClient, loadConfig, runMigrations,
   createUniverseRepo, createMarketRepo, createOpsRepo, createEventsRepo,
-  createNewsRepo, createFundamentalsRepo,
+  createNewsRepo, createFundamentalsRepo, createIntradayFlowRepo,
 } from '@stockagents/db';
 import { createBroker } from './cdp/broker.js';
 import { startScheduler } from './scheduler.js';
 import { nowVnDate, isTradingDay } from './lib/vn_time.js';
 import { runIngestPrices } from './jobs/ingest_prices.js';
 import { runPollQuotes } from './jobs/poll_quotes.js';
+import { runPollIntradayFlow } from './jobs/poll_intraday_flow.js';
 import { runPruneEvents } from './jobs/prune_events.js';
 import { runIngestNews } from './jobs/ingest_news.js';
 import { runIngestFundamentals } from './jobs/ingest_fundamentals.js';
@@ -57,6 +58,7 @@ export function createRepos(client) {
     events: createEventsRepo(client),
     news: createNewsRepo(client),
     fundamentals: createFundamentalsRepo(client),
+    intradayFlow: createIntradayFlowRepo(client),
   };
 }
 
@@ -69,6 +71,12 @@ async function seedUniverse(repos) {
 async function main() {
   const cfg = loadConfig();
   const client = createClient(cfg.databaseUrl);
+  // Tự áp dụng migration còn thiếu mỗi lần khởi động — khỏi phải nhớ chạy tay
+  // `npm run migrate` trước mỗi lần bật lại (đã có lần quên: dashboard 500 vì
+  // cột mới chỉ áp dụng cho DB test qua withTestDb(), chưa bao giờ chạy trên
+  // DB thật). An toàn khi nhiều tiến trình (data-service/api/telegram-bot)
+  // cùng gọi lúc khởi động — runMigrations() tự khoá advisory quanh cả đợt.
+  await runMigrations(client);
   const repos = createRepos(client);
   const broker = createBroker({ core });
 
@@ -114,6 +122,12 @@ async function main() {
           await spawnTask('watch:tick', ['--date', nowVnDate(), ...(cfg.simStub ? ['--stub'] : [])]);
         }
         return result;
+      },
+      // Nguồn VCI qua HTTP, độc lập CDP — không cần onTradingDayOnly, tự lọc
+      // giờ giao dịch qua isTradingWindow như poll_quotes.
+      poll_intraday_flow: async () => {
+        const symbols = (await repos.universe.listActive()).map(s => s.symbol);
+        return runPollIntradayFlow({ repos, symbols });
       },
       prune_events: () => runPruneEvents({ repos, retentionDays: cfg.eventLogRetentionDays }),
 

@@ -1,12 +1,12 @@
 /**
- * Nối 7 nguồn tin tiếng Việt sẵn có trong `tradingview_mcp/news/sources/`.
+ * Nối 9 nguồn tin tiếng Việt sẵn có trong `tradingview_mcp/news/sources/`.
  *
  * Đây là file DUY NHẤT trong data-service biết tới các module đó — cùng
  * nguyên tắc với CDP broker: một điểm chạm, mọi thứ khác nhận dữ liệu qua
  * tham số. `runIngestNews` nhận `sources` để test không phải gọi mạng.
  */
 
-const BASE = new URL('../../../../tradingview-mcp/news/sources/', import.meta.url);
+const BASE = new URL('../../../../tradingview_mcp/news/sources/', import.meta.url);
 
 const MODULES = {
   cafef: 'cafef.js',
@@ -15,6 +15,9 @@ const MODULES = {
   vneconomy: 'vneconomy.js',
   vietnambiz: 'vietnambiz.js',
   tinnhanh: 'tinnhanh.js',
+  vietnamplus: 'vietnamplus.js',
+  tbtcvn: 'thoibaotaichinhvietnam.js',
+  hmoney24: '24hmoney.js',
 };
 
 /**

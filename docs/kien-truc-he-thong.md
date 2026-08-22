@@ -65,7 +65,7 @@ Không ai được viết SQL tay ở package khác — mọi truy vấn đi qua
 |---|---|
 | `client.js` | Bọc `pg.Pool`, đăng ký type parser (giữ `NUMERIC` dạng chuỗi cho tiền tệ, ép `DATE` về chuỗi `YYYY-MM-DD` tránh lệch múi giờ) |
 | `config.js` | Đọc `.env`, báo lỗi rõ tên biến thiếu thay vì crash mơ hồ |
-| `migrate.js` | Chạy migration theo thứ tự, tự bỏ qua cái đã áp dụng (bảng `schema_migrations`) |
+| `migrate.js` | Chạy migration theo thứ tự, tự bỏ qua cái đã áp dụng (bảng `schema_migrations`); cả đợt gộp trong MỘT transaction khoá bằng `pg_advisory_xact_lock` — nhiều tiến trình (data-service, api, telegram-bot) tự migrate lúc khởi động không đụng độ nhau. `data-service/index.js` gọi tự động mỗi lần khởi động |
 | `repositories/_guard.js` | `assertAgentScope()` — mọi hàm chạm bảng có `agent_id` phải gọi hàm này trước; cô lập giữa 5 agent cưỡng chế bằng code, không phải quy ước |
 | `repositories/agents.js` | CRUD `agents`, tiền mặt (`cash_vnd`), `portfolio_snapshot`, `metrics_daily` |
 | `repositories/trading.js` | `orders`/`fills`/`positions`/`position_lots`/`trades`/`trade_outcomes` |
@@ -76,7 +76,8 @@ Không ai được viết SQL tay ở package khác — mọi truy vấn đi qua
 | `repositories/triggers.js` | `trigger_log` — chống rung watchdog |
 | `repositories/lessons.js` | `lessons`/`lesson_usage` — trí nhớ dài hạn của agent |
 | `repositories/news.js` | `news_items` — không có `assertAgentScope` vì tin tức không thuộc về agent nào |
-| `repositories/fundamentals.js` | `fundamentals_snapshot` — chỉ số tài chính cơ bản theo quý (P/E, P/B, ROE, ROA, cổ tức, nợ/vốn chủ, vốn hoá), cùng lý do không `assertAgentScope` như `news.js` |
+| `repositories/fundamentals.js` | `fundamentals_snapshot` — chỉ số tài chính cơ bản theo quý (P/E, P/B, ROE, ROA, cổ tức, nợ/vốn chủ, vốn hoá, doanh thu/lợi nhuận tuyệt đối), cùng lý do không `assertAgentScope` như `news.js` |
+| `repositories/intraday_flow.js` | `intraday_flow_snapshot` — VWAP thật, order book, khối ngoại mua/bán ròng, áp lực mua/bán chủ động gần nhất; cùng khuôn `fundamentals.js` |
 
 ---
 
@@ -108,7 +109,8 @@ xem mục Ranh giới bên dưới.
 | `quotes.js` | Lấy giá tick, **tự đối chiếu** `q.symbol` với mã yêu cầu (chart chưa chuyển kịp thì báo lỗi thay vì âm thầm trả giá mã cũ), và loại tick khi ≥2 mã trong cùng lượt ra cùng một giá (dấu hiệu CDP đọc dính giá cũ) |
 | `indicators_calc.js` | **Tự tính** RSI/MACD/Bollinger/ATR từ `ohlcv_daily` — không đọc trực tiếp từ TradingView vì Data Window chỉ điền khi có người ngồi trước máy |
 | `indicators.js` | Parse giá trị dạng chuỗi từ `getStudyValues()` sang số (đường vòng khi không tự tính được) |
-| `fundamentals.js` | Gọi API công khai VCI (Vietcap) lấy chỉ số tài chính theo quý cho một mã, không qua CDP/TradingView — nguồn dữ liệu độc lập |
+| `fundamentals.js` | Gọi API công khai VCI (Vietcap) lấy chỉ số tài chính theo quý + doanh thu/lợi nhuận tuyệt đối cho một mã, không qua CDP/TradingView — nguồn dữ liệu độc lập |
+| `intraday_flow.js` | Gọi API công khai VCI: `getList` (BATCH cả universe — VWAP thật, order book, khối ngoại ròng) + `LEData/getAll` (riêng từng mã, tối đa 100 lệnh khớp gần nhất — áp lực mua/bán chủ động) |
 
 ### `jobs/` — mỗi job là một hàm thuần nhận `{ broker, repos }`, test được không cần CDP thật
 
@@ -117,6 +119,7 @@ xem mục Ranh giới bên dưới.
 | `ingest_prices.js` | 08:30 — OHLCV 60 phiên + chỉ báo cho toàn universe, cập nhật `session_state` |
 | `ingest_fundamentals.js` | 08:35 — chỉ số tài chính cơ bản cho toàn universe qua VCI; best-effort, KHÔNG đụng `session_state` |
 | `poll_quotes.js` | 09:00–14:30 mỗi 5 phút — giá tick trong phiên, tự bỏ qua ngoài giờ/nghỉ trưa/lễ |
+| `poll_intraday_flow.js` | Cùng nhịp `poll_quotes` (cron riêng) — VWAP/order book/khối ngoại/áp lực mua-bán qua VCI, độc lập CDP |
 | `ingest_news.js` | 08:45 — gom tin từ `news/sources.js`, chấm sentiment, gắn mã |
 | `prune_events.js` | 02:00 — dọn `event_log` cũ hơn `EVENT_LOG_RETENTION_DAYS` |
 
@@ -155,7 +158,7 @@ xem mục Ranh giới bên dưới.
 | File | Vai trò |
 |---|---|
 | `registry.js` | Nạp + kiểm tra `config/agents.json` |
-| `context.js` | Dựng prompt: danh mục, chỉ báo, tin tức, chỉ số cơ bản (P/E, ROE...), bài học cũ, và `maxAffordableQty` — TRẦN khối lượng tính sẵn vì model nhỏ (Haiku) từng tính sai gấp hàng chục lần |
+| `context.js` | Dựng prompt: danh mục, chỉ báo, %thay đổi/độ rộng thị trường/sức mạnh ngành, tin tức, chỉ số cơ bản (P/E, ROE, doanh thu/lợi nhuận tuyệt đối), VWAP/order book/khối ngoại/áp lực mua-bán, tỷ trọng/mã trên NAV, bài học cũ, và `maxAffordableQty` — TRẦN khối lượng tính sẵn vì model nhỏ (Haiku) từng tính sai gấp hàng chục lần |
 | `runner.js` | Gọi LLM, validate qua `decision_schema.js`, đẩy quyết định hợp lệ vào `engine.submit()` |
 
 ### `llm/` — một adapter cho mỗi nhà cung cấp
@@ -232,6 +235,7 @@ xem [config.js](../packages/api/src/config.js) và migration 008.
 | 08:35 | `ingest_fundamentals` | data-service |
 | 08:45 | `ingest_news` | data-service |
 | 09:00–14:30, mỗi 5' | `poll_quotes` → `watch_tick` | data-service → agent-runtime (spawn) |
+| 09:00–14:30, mỗi 5' | `poll_intraday_flow` (cron riêng, độc lập) | data-service |
 | 14:58 | `watch_close` | data-service → agent-runtime (spawn) |
 | 15:00 | `report_day` | data-service → api (spawn) |
 | 02:00 | `prune_events` | data-service |

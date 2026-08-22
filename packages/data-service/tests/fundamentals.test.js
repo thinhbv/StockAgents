@@ -44,10 +44,15 @@ test('collectFundamentals chỉ giữ field dùng để phân tích, bỏ field 
 });
 
 test('collectFundamentals bóc tiền tố sàn khỏi mã khi gọi API (VCI nhận ticker trần)', async () => {
-  let seenUrl = null;
-  const fetchImpl = async (url) => { seenUrl = url; return { ok: true, json: async () => ({ data: [ratioRow(2026, 2, 11.6)] }) }; };
+  // collectFundamentals giờ gọi thêm 2 endpoint doanh thu/lợi nhuận song song
+  // với endpoint tỷ lệ — ghi lại MỌI url đã gọi thay vì chỉ url cuối cùng.
+  const seenUrls = [];
+  const fetchImpl = async (url) => {
+    seenUrls.push(url);
+    return { ok: true, json: async () => ({ data: [ratioRow(2026, 2, 11.6)] }) };
+  };
   await collectFundamentals('HOSE:FPT', fetchImpl);
-  assert.match(seenUrl, /\/FPT\/statistics-financial$/);
+  assert.ok(seenUrls.some(u => /\/FPT\/statistics-financial$/.test(u)));
 });
 
 test('collectFundamentals ném lỗi rõ khi HTTP lỗi', async () => {
@@ -57,6 +62,79 @@ test('collectFundamentals ném lỗi rõ khi HTTP lỗi', async () => {
 
 test('collectFundamentals ném lỗi rõ khi data rỗng, không trả về giá trị rác', async () => {
   await assert.rejects(() => collectFundamentals('HOSE:FPT', fakeFetchOk([])), /không có dữ liệu/);
+});
+
+/* ---------- incomeStatement (doanh thu/lợi nhuận tuyệt đối) ---------- */
+
+const metricsBody = (fields) => ({ data: { INCOME_STATEMENT: fields } });
+const F_NONBANK = [
+  { field: 'isa3', titleVi: 'Doanh thu thuần' },
+  { field: 'isa20', titleVi: 'Lãi/(lỗ) thuần sau thuế' },
+  { field: 'isa22', titleVi: 'Lợi nhuận của Cổ đông của Công ty mẹ' },
+  { field: 'isa23', titleVi: 'Lãi cơ bản trên cổ phiếu (VND)' },
+];
+const F_BANK = [
+  { field: 'isb27', titleVi: 'Thu nhập lãi thuần' },
+  { field: 'isa20', titleVi: 'Lợi nhuận sau thuế' },
+  { field: 'isa22', titleVi: 'Cổ đông của Công ty mẹ' },
+];
+
+function routedFetch({ ratios, metrics, statement }) {
+  return async (url) => {
+    if (url.includes('/statistics-financial')) return { ok: true, json: async () => ({ data: ratios }) };
+    if (url.includes('/financial-statement/metrics')) return { ok: true, json: async () => metrics };
+    if (url.includes('/financial-statement')) return { ok: true, json: async () => ({ data: { quarters: statement } }) };
+    throw new Error(`unexpected url: ${url}`);
+  };
+}
+
+test('collectFundamentals đính kèm doanh thu (isa3) cho công ty phi tài chính', async () => {
+  const fetchImpl = routedFetch({
+    ratios: [ratioRow(2026, 2, 11.6)],
+    metrics: metricsBody(F_NONBANK),
+    statement: [{ yearReport: 2026, lengthReport: 2, isa3: 23_213e9, isa20: 3_233e9, isa22: 2_620e9, isa23: 3903 }],
+  });
+  const r = await collectFundamentals('HOSE:FPT', fetchImpl);
+  assert.equal(r.incomeStatement.revenue.label, 'Doanh thu thuần');
+  assert.equal(r.incomeStatement.revenue.value, 23_213e9);
+  assert.equal(r.incomeStatement.netProfitParent.value, 2_620e9);
+});
+
+test('collectFundamentals dùng thu nhập lãi thuần (isb27) làm doanh thu cho ngân hàng, không lẫn sang isa3', async () => {
+  const fetchImpl = routedFetch({
+    ratios: [ratioRow(2026, 2, 8.2)],
+    metrics: metricsBody(F_BANK),
+    statement: [{ yearReport: 2026, lengthReport: 2, isb27: 15_000e9, isa20: 9_000e9, isa22: 8_800e9 }],
+  });
+  const r = await collectFundamentals('HOSE:VCB', fetchImpl);
+  assert.equal(r.incomeStatement.revenue.label, 'Thu nhập lãi thuần');
+  assert.equal(r.incomeStatement.revenue.value, 15_000e9);
+});
+
+test('collectFundamentals lấy đúng quý MỚI NHẤT của báo cáo thu nhập, không phải phần tử cuối mảng', async () => {
+  const fetchImpl = routedFetch({
+    ratios: [ratioRow(2026, 2, 11.6)],
+    metrics: metricsBody(F_NONBANK),
+    statement: [
+      { yearReport: 2026, lengthReport: 2, isa3: 100, isa20: 10 },
+      { yearReport: 2025, lengthReport: 4, isa3: 999, isa20: 999 },
+      { yearReport: 2026, lengthReport: 1, isa3: 50, isa20: 5 },
+    ],
+  });
+  const r = await collectFundamentals('HOSE:FPT', fetchImpl);
+  assert.equal(r.incomeStatement.yearReport, 2026);
+  assert.equal(r.incomeStatement.quarter, 2);
+  assert.equal(r.incomeStatement.revenue.value, 100);
+});
+
+test('collectFundamentals vẫn trả về tỷ lệ bình thường khi endpoint doanh thu lỗi — best-effort', async () => {
+  const fetchImpl = async (url) => {
+    if (url.includes('/statistics-financial')) return { ok: true, json: async () => ({ data: [ratioRow(2026, 2, 11.6)] }) };
+    return { ok: false, status: 500 };
+  };
+  const r = await collectFundamentals('HOSE:FPT', fetchImpl);
+  assert.equal(r.pe, 11.6);
+  assert.equal(r.incomeStatement, null);
 });
 
 test('collectFundamentalsBatch một mã lỗi không chặn các mã còn lại', async () => {

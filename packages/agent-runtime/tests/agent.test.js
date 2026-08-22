@@ -1,7 +1,9 @@
 import { test, before, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { withTestDb, resetTables } from '../../../tests/helpers/db.js';
-import { createAgentsRepo, createTradingRepo, createNewsRepo, createFundamentalsRepo } from '@stockagents/db';
+import {
+  createAgentsRepo, createTradingRepo, createNewsRepo, createFundamentalsRepo, createIntradayFlowRepo,
+} from '@stockagents/db';
 import { loadAgentDefs } from '../src/agents/registry.js';
 import { buildContext } from '../src/agents/context.js';
 import { createRunner } from '../src/agents/runner.js';
@@ -13,7 +15,7 @@ const silent = { info() {}, warn() {}, error() {} };
 let client, repos, engine;
 const TABLES = ['position_lots', 'fills', 'orders', 'trade_outcomes', 'trades',
   'positions', 'portfolio_snapshot', 'metrics_daily', 'news_items', 'fundamentals_snapshot',
-  'agents', 'universe'];
+  'intraday_flow_snapshot', 'agents', 'universe'];
 
 const ctx = () => ({
   tradeDate: '2026-07-20',
@@ -27,6 +29,7 @@ before(async () => {
   repos = {
     agents: createAgentsRepo(client), trading: createTradingRepo(client),
     news: createNewsRepo(client), fundamentals: createFundamentalsRepo(client),
+    intradayFlow: createIntradayFlowRepo(client),
   };
   engine = createEngine({ repos, logger: silent });
 });
@@ -63,6 +66,86 @@ test('buildContext gói đủ danh mục, universe và ràng buộc', async () =
   // Trần 20% NAV (mặc định), trừ phí 0,15%, làm tròn lô chẵn 100 — không phải
   // 1000000000/100000=10000cp (sẽ vượt tỷ trọng tối đa một mã).
   assert.equal(c.universe[0].maxAffordableQty, 1900);
+});
+
+test('buildContext tính %thay đổi, độ rộng thị trường và sức mạnh ngành từ chính giá đang có — không cần nguồn mới', async () => {
+  const c = await buildContext({
+    repos, agentId: 'a1', tradeDate: '2026-07-20',
+    universe: [
+      { symbol: 'HOSE:FPT', sector: 'Công nghệ' },
+      { symbol: 'HOSE:VCB', sector: 'Ngân hàng' },
+    ],
+    snapshots: new Map(),
+    priceMap: new Map([['HOSE:FPT', 110_000], ['HOSE:VCB', 90_000]]),
+    refPriceMap: new Map([['HOSE:FPT', 100_000], ['HOSE:VCB', 100_000]]),
+  });
+
+  assert.equal(c.universe[0].changePct, 10);
+  assert.equal(c.universe[1].changePct, -10);
+  assert.equal(c.market.breadth.advancers, 1);
+  assert.equal(c.market.breadth.decliners, 1);
+  assert.equal(c.market.sectorStrength[0].sector, 'Công nghệ');
+  assert.equal(c.market.sectorStrength[0].avgChangePct, 10);
+});
+
+test('buildContext = null cho changePct/volumeSpikeRatio khi thiếu giá tham chiếu/chỉ báo khối lượng — không đoán bừa', async () => {
+  const c = await buildContext({
+    repos, agentId: 'a1', tradeDate: '2026-07-20',
+    universe: [{ symbol: 'HOSE:FPT', sector: 'Công nghệ' }],
+    snapshots: new Map([['HOSE:FPT', { rsi14: 62.5 }]]),
+    priceMap: new Map([['HOSE:FPT', 100_000]]),
+  });
+  assert.equal(c.universe[0].changePct, null);
+  assert.equal(c.universe[0].volumeSpikeRatio, null);
+  assert.equal(c.market.breadth.advancers, 0);
+  assert.deepEqual(c.market.sectorStrength, []);
+});
+
+test('buildContext tính volumeSpikeRatio = volume/volumeMa20', async () => {
+  const c = await buildContext({
+    repos, agentId: 'a1', tradeDate: '2026-07-20',
+    universe: [{ symbol: 'HOSE:FPT', sector: 'Công nghệ' }],
+    snapshots: new Map([['HOSE:FPT', { volume: 3_000_000, volumeMa20: 1_500_000 }]]),
+    priceMap: new Map([['HOSE:FPT', 100_000]]),
+  });
+  assert.equal(c.universe[0].volumeSpikeRatio, 2);
+});
+
+test('buildContext tính tỷ trọng/mã trên NAV và %NAV đang lỗ tạm tính', async () => {
+  await repos.trading.upsertPosition('a1', {
+    symbol: 'HOSE:FPT', qtyTotal: 1000, qtySellable: 1000,
+    avgCostVnd: 120_000, exitPlan: {}, peakPriceVnd: 120_000,
+  });
+  const c = await buildContext({
+    repos, agentId: 'a1', tradeDate: '2026-07-20',
+    universe: [{ symbol: 'HOSE:FPT', sector: 'Công nghệ' }],
+    snapshots: new Map(),
+    priceMap: new Map([['HOSE:FPT', 100_000]]), // lỗ so với giá vốn 120k
+  });
+  // nav = cash 1 tỷ (chưa trừ, test dựng thẳng vị thế không qua applyBuy) +
+  // marketValue 100tr = 1.1 tỷ. weight = 100tr/1.1tỷ.
+  assert.equal(c.portfolio.positions[0].weightPctNav, 9.09);
+  assert.equal(c.portfolio.pctNavAtLoss, 9.09);
+});
+
+test('buildContext đưa VWAP/áp lực mua-bán gần nhất THẬT vào context, không chỉ mảng rỗng', async () => {
+  await repos.intradayFlow.insertSnapshot('HOSE:FPT', { vwapVnd: 71_500, recentBuyVolume: 300, recentSellVolume: 50 });
+  const c = await buildContext({
+    repos, agentId: 'a1', tradeDate: '2026-07-20',
+    universe: [{ symbol: 'HOSE:FPT', sector: 'Công nghệ' }],
+    snapshots: new Map(), priceMap: new Map([['HOSE:FPT', 100_000]]),
+  });
+  assert.equal(c.universe[0].intradayFlow.vwapVnd, 71_500);
+});
+
+test('buildContext dựng được bình thường khi chưa có snapshot VWAP/repos.intradayFlow vắng mặt — null, không lỗi', async () => {
+  const { intradayFlow, ...reposWithoutFlow } = repos;
+  const c = await buildContext({
+    repos: reposWithoutFlow, agentId: 'a1', tradeDate: '2026-07-20',
+    universe: [{ symbol: 'HOSE:FPT', sector: 'Công nghệ' }],
+    snapshots: new Map(), priceMap: new Map([['HOSE:FPT', 100_000]]),
+  });
+  assert.equal(c.universe[0].intradayFlow, null);
 });
 
 test('buildContext đưa tin THẬT (tiêu đề) vào context, không chỉ điểm sentiment', async () => {

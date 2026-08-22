@@ -13,6 +13,10 @@ export const SCHEDULES = [
   // riêng: chạy NỐI TIẾP sau poll_quotes trong data-service/index.js để đảm
   // bảo luôn thấy tick vừa ghi, tránh race giữa hai job cùng lịch */5.
   { name: 'poll_quotes', cron: '*/5 9-14 * * 1-5' },
+  // Nguồn dữ liệu độc lập với CDP (VCI qua HTTP) — cùng nhịp poll_quotes
+  // nhưng đăng ký cron RIÊNG, không chung với poll_quotes: một job lỗi không
+  // được kéo job kia ngừng ghi (không có phụ thuộc thứ tự như watch_tick).
+  { name: 'poll_intraday_flow', cron: '*/5 9-14 * * 1-5' },
   // 14:58 — trước report_day 2 phút, sau lượt poll_quotes cuối (14:55) —
   // chốt sổ cho agent nào đã mở mà chưa chốt.
   { name: 'watch_close', cron: '58 14 * * 1-5' },

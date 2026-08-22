@@ -5,6 +5,7 @@ import { createRepos } from './index.js';
 import { runIngestPrices } from './jobs/ingest_prices.js';
 import { runPollQuotes } from './jobs/poll_quotes.js';
 import { runIngestFundamentals } from './jobs/ingest_fundamentals.js';
+import { runPollIntradayFlow } from './jobs/poll_intraday_flow.js';
 
 const COMMANDS = {
   async 'ingest-prices'({ broker, repos }) {
@@ -17,6 +18,10 @@ const COMMANDS = {
   // Không cần broker — gọi HTTP thẳng tới Vietcap, không qua CDP.
   async 'ingest-fundamentals'({ repos }) {
     return runIngestFundamentals({ repos });
+  },
+  async 'poll-intraday-flow'({ repos }) {
+    const symbols = (await repos.universe.listActive()).map(s => s.symbol);
+    return runPollIntradayFlow({ repos, symbols });
   },
 };
 

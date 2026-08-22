@@ -18,6 +18,7 @@ const EXPECTED_TABLES = [
   'agents', 'orders', 'fills', 'positions', 'position_lots',
   'trades', 'trade_outcomes', 'portfolio_snapshot', 'metrics_daily',
   'news_items', 'lessons', 'lesson_usage', 'event_log', 'fundamentals_snapshot',
+  'intraday_flow_snapshot',
 ];
 
 test('mọi bảng theo spec đều tồn tại', async () => {

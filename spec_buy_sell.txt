@@ -1,0 +1,10 @@
+PRICE Giá Giá mở/cao/thấp/đóng, % tăng giảm, gap
+TECHNICAL Phân tích kỹ thuật MA20, RSI, MACD, Bollinger Bands, ATR, VWAP
+VOLUME Khối lượng Volume, Volume MA20, volume spike, Volume Profile
+ORDERFLOW Dòng lệnh mua bán Order Book, Bid/Ask, mất cân bằng cung cầu, ngoại, tự doanh
+MARKET Thị trường chung VN-Index, VN30, độ rộng thị trường, trạng thái Bull/Bear
+SECTOR Ngành Ngân hàng, BĐS, chứng khoán…, sức mạnh ngành, dòng tiền luân chuyển
+FUNDAMENTAL Sức khỏe doanh nghiệp PE, PB, ROE, ROA, doanh thu, lợi nhuận, dòng tiền
+EVENT/NEWS Tin tức & sự kiện Tin doanh nghiệp, BCTC, cổ tức, tin vĩ mô, sentiment
+PORTFOLIO Tài khoản của agent Số lượng cổ phiếu, NAV, PnL, tỷ trọng, rủi ro
+EXECUTION Việc thực hiện lệnh Lệnh đặt, lệnh khớp, giá khớp, slippage, phí, latency

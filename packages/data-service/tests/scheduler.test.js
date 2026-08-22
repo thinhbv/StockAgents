@@ -21,8 +21,8 @@ function fakeCronLib() {
 test('SCHEDULES định nghĩa đủ các job của hệ thống', () => {
   const names = SCHEDULES.map(s => s.name).sort();
   assert.deepEqual(names, [
-    'ingest_fundamentals', 'ingest_news', 'ingest_prices', 'poll_quotes',
-    'prune_events', 'report_day', 'watch_close',
+    'ingest_fundamentals', 'ingest_news', 'ingest_prices', 'poll_intraday_flow',
+    'poll_quotes', 'prune_events', 'report_day', 'watch_close',
   ]);
 });
 

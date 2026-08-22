@@ -1,6 +1,6 @@
 import {
   createAgentsRepo, createTradingRepo, createUniverseRepo, createMarketRepo, createNewsRepo,
-  createFundamentalsRepo, createEventsRepo,
+  createFundamentalsRepo, createIntradayFlowRepo, createEventsRepo,
 } from '@stockagents/db';
 import { toVnd } from './sim/vn_rules.js';
 import { createEngine } from './sim/engine.js';
@@ -27,6 +27,7 @@ export async function runSession({
     market: createMarketRepo(client),
     news: createNewsRepo(client),
     fundamentals: createFundamentalsRepo(client),
+    intradayFlow: createIntradayFlowRepo(client),
     events: createEventsRepo(client),
   };
 
@@ -55,7 +56,7 @@ export async function runSession({
   const context = await buildContext({
     repos, agentId, tradeDate,
     universe: universe.map(u => ({ symbol: u.symbol, sector: u.sector })),
-    snapshots, priceMap: tickPriceMap, trigger: 'SESSION_OPEN', risk,
+    snapshots, priceMap: tickPriceMap, refPriceMap, trigger: 'SESSION_OPEN', risk,
   });
 
   const prevSnap = await repos.agents.getPreviousSnapshot(agentId, tradeDate);

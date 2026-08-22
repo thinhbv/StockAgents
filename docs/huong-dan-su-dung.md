@@ -140,6 +140,16 @@ giờ xoá nhầm dữ liệu thật.
 npm run migrate
 ```
 
+Chạy tay bước này vẫn cần cho LẦN ĐẦU (role `stockagents_ro` phải có trước
+khi dashboard/telegram-bot kết nối được). Từ lần sau, `data-service` (`npm
+run data-service`) **tự áp dụng migration còn thiếu mỗi lần khởi động** —
+không cần nhớ chạy tay nữa. Chỉ `data-service` tự làm việc này vì nó là tiến
+trình DUY NHẤT giữ kết nối có quyền DDL (`DATABASE_URL`); dashboard và
+telegram-bot cố tình chỉ kết nối bằng role chỉ-đọc (mục 7, 8) nên không thể
+và không nên tự chạy migration. Nhiều tiến trình cùng gọi migration một lúc
+(ví dụ PM2 khởi động lại `data-service`) vẫn an toàn — có khoá advisory
+(`pg_advisory_xact_lock`) tuần tự hoá.
+
 **Kiểm tra bộ test** trước khi tin vào hệ thống:
 
 ```bash
@@ -519,6 +529,8 @@ npm run api                                       # dashboard :8080
 
 npm run ingest:prices                             # lấy giá + tính chỉ báo
 npm run poll:quotes                               # thu báo giá trong phiên
+npm run ingest:fundamentals                       # chỉ số cơ bản + doanh thu/lợi nhuận (VCI)
+npm run poll:intraday-flow                        # VWAP/order book/khối ngoại/áp lực mua-bán (VCI)
 
 npm run sim:all     -- --date YYYY-MM-DD [--stub] # cả 5 agent, replay theo lô (xem lại/test tay)
 npm run sim:day     -- --agent <id> --date YYYY-MM-DD [--stub]
