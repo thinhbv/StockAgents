@@ -51,6 +51,27 @@ test('respond báo lỗi rõ nếu provider trả sai khuôn — thiếu reply',
   await assert.rejects(() => respond({ provider, message: 'x', snapshot: {} }), /reply/);
 });
 
+test('respond cắt bỏ cú pháp gọi công cụ bị lẫn vào reply (model hallucinate) — không lộ ra Telegram', async () => {
+  const leaked = 'Sếp cho em biết cụ thể câu hỏi ạ.</parameter>\n<parameter name="action">{"type": "NONE"}</parameter>\n</invoke>';
+  const provider = { async complete() { return { reply: leaked, action: { type: 'NONE' } }; } };
+  const r = await respond({ provider, message: 'x', snapshot: {} });
+  assert.equal(r.reply, 'Sếp cho em biết cụ thể câu hỏi ạ.');
+  assert.doesNotMatch(r.reply, /<\/?parameter|<\/?invoke/);
+});
+
+test('respond không đụng vào reply bình thường không có dấu hiệu rò rỉ', async () => {
+  const provider = { async complete() { return { reply: 'FPT đang lãi 3%, giữ nguyên vị thế.', action: { type: 'NONE' } }; } };
+  const r = await respond({ provider, message: 'x', snapshot: {} });
+  assert.equal(r.reply, 'FPT đang lãi 3%, giữ nguyên vị thế.');
+});
+
+test('respond gọi provider với temperature thấp (nhất quán, giảm hallucinate)', async () => {
+  let seenTemp = null;
+  const provider = { async complete({ temperature }) { seenTemp = temperature; return { reply: 'ok', action: { type: 'NONE' } }; } };
+  await respond({ provider, message: 'x', snapshot: {} });
+  assert.equal(seenTemp, 0.3);
+});
+
 test('respond gửi lịch sử hội thoại kèm tin nhắn mới cho provider', async () => {
   let seenMessages = null;
   const provider = { async complete({ messages }) { seenMessages = messages; return { reply: 'ok', action: { type: 'NONE' } }; } };

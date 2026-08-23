@@ -40,7 +40,19 @@ Bạn được phép thực hiện ĐÚNG hai loại điều chỉnh khi ngườ
 
 Bạn KHÔNG được và không có khả năng: tự đặt lệnh mua/bán thay agent, đổi persona/phong cách của agent, hay xem/sửa bất kỳ thứ gì ngoài phạm vi trên. Nếu người dùng yêu cầu việc ngoài phạm vi này, giải thích rõ trong "reply" là bạn không làm được và vì sao — đừng giả vờ đã làm.
 
-Không có điều chỉnh nào thì action = { "type": "NONE" }. Trả lời bằng tiếng Việt, ngắn gọn, đúng trọng tâm câu hỏi hoặc yêu cầu.`;
+Không có điều chỉnh nào thì action = { "type": "NONE" }. Trả lời bằng tiếng Việt, ngắn gọn, đúng trọng tâm câu hỏi hoặc yêu cầu.
+
+"reply" CHỈ được chứa văn bản hội thoại thuần tuý gửi thẳng cho người dùng qua Telegram — không chèn thẻ XML, cú pháp gọi công cụ, hay bất kỳ định dạng điều khiển nào (ví dụ <invoke>, <parameter>). Viết như đang nhắn tin cho người, không phải như đang mô tả một lời gọi hàm.`;
+
+// Phòng hờ model hallucinate cú pháp gọi công cụ (đã thấy thật: reply lẫn
+// </parameter>/<invoke> dù tool_use của Anthropic vốn không đi qua text) —
+// cắt bỏ từ dấu hiệu rò rỉ đầu tiên, không để lộ ra Telegram.
+const LEAKED_TOOL_SYNTAX = /<\/?(?:invoke|parameter)\b[^>]*>/i;
+
+function stripLeakedToolSyntax(reply) {
+  const idx = reply.search(LEAKED_TOOL_SYNTAX);
+  return idx === -1 ? reply : reply.slice(0, idx).trimEnd();
+}
 
 /** Gom dữ liệu hệ thống hiện tại cho một lượt hỏi — không có tool-calling
  * nhiều bước, nên gom đủ luôn một lần thay vì để agent điều phối tự xin
@@ -72,14 +84,19 @@ export async function respond({ provider, message, history = [], snapshot }) {
     ...history,
     { role: 'user', content: `Dữ liệu hệ thống hiện tại:\n${JSON.stringify(snapshot)}\n\nCâu hỏi/yêu cầu: ${message}` },
   ];
-  const raw = await provider.complete({ system: SYSTEM_PROMPT, messages, jsonSchema: COORDINATOR_SCHEMA });
+  // temperature thấp hơn mặc định (1) — vai trò tư vấn/tra cứu dữ liệu cần
+  // trả lời nhất quán, không cần sáng tạo; nhiệt độ cao là một phần nguyên
+  // nhân khiến model từng lẫn cú pháp gọi công cụ vào "reply" (đã thấy thật).
+  const raw = await provider.complete({
+    system: SYSTEM_PROMPT, messages, jsonSchema: COORDINATOR_SCHEMA, temperature: 0.3,
+  });
   // complete() trả mảng cho các agent giao dịch (nhiều quyết định/lượt);
   // agent điều phối chỉ có MỘT phản hồi/lượt nên bóc phần tử đầu nếu cần.
   const out = Array.isArray(raw) ? raw[0] : raw;
   if (!out || typeof out.reply !== 'string') {
     throw new Error('agent điều phối trả về sai khuôn — thiếu "reply"');
   }
-  return { reply: out.reply, action: out.action ?? { type: 'NONE' } };
+  return { reply: stripLeakedToolSyntax(out.reply), action: out.action ?? { type: 'NONE' } };
 }
 
 /**
