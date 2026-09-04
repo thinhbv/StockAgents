@@ -160,9 +160,18 @@
     if (n >= 1_000) return `${(n / 1_000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}K`;
     return n.toLocaleString('vi-VN');
   };
-  const timeFmt = (ts) => ts
-    ? new Date(ts).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
-    : '—';
+  // Chỉ hiện giờ:phút:giây dễ đánh lừa — tick từ 8 ngày trước lúc 13:40:28
+  // trông y hệt tick của HÔM NAY lúc 13:40:28, không cách nào nhận ra dữ
+  // liệu cũ chỉ bằng mắt thường. Thêm ngày khi tick không phải của hôm nay.
+  const timeFmt = (ts) => {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    const opts = { timeZone: 'Asia/Ho_Chi_Minh' };
+    const time = d.toLocaleTimeString('vi-VN', opts);
+    const tickDate = d.toLocaleDateString('vi-VN', opts);
+    const today = new Date().toLocaleDateString('vi-VN', opts);
+    return tickDate === today ? time : `${tickDate} ${time}`;
+  };
 
   async function refreshQuotes() {
     const body = document.getElementById('quotes-body');
