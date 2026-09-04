@@ -1,5 +1,6 @@
 import { collectQuotes } from '../collectors/quotes.js';
 import { isTradingWindow } from '../lib/vn_time.js';
+import { priceBand, exchangeOf } from '../lib/price_band.js';
 
 const JOB = 'poll_quotes';
 
@@ -24,7 +25,31 @@ export async function runPollQuotes({ broker, repos, symbols, logger = console, 
   }
 
   const { ticks, errors } = await collectQuotes(broker, symbols);
-  const inserted = await repos.market.insertQuoteTicks(ticks);
+
+  // Không sàn thật nào cho khớp lệnh ngoài trần/sàn — một tick nằm ngoài
+  // biên độ tính từ giá tham chiếu chắc chắn là dữ liệu rác từ nguồn (panel
+  // CDP đọc nhầm/kẹt giá cũ), không phải biến động thật dù có tin sốc đến
+  // đâu. Đã thấy hậu quả thật: một tick rác kiểu này từng bị agent COI LÀ
+  // GIÁ THẬT và bán mất một vị thế với lãi ảo (ACB 22.500 → "25.350" ngày
+  // 2026-08-25). Chặn ở đây, trước khi ghi vào quote_tick, thay vì để tầng
+  // trên (agent-runtime) phải tự nghi ngờ dữ liệu nó nhận được.
+  const refMap = await repos.market.getRefPrices(symbols);
+  const clean = [];
+  for (const t of ticks) {
+    const ref = refMap.get(t.symbol);
+    const band = ref ? priceBand(ref, exchangeOf(t.symbol)) : null;
+    if (band && (t.price < band.floor || t.price > band.ceiling)) {
+      errors.push({
+        symbol: t.symbol,
+        message: `collectQuotes: giá ${t.price} ngoài biên độ [${band.floor}, ${band.ceiling}] ` +
+          `(tham chiếu ${ref}) — nghi dữ liệu rác, bỏ qua`,
+      });
+      continue;
+    }
+    clean.push(t);
+  }
+
+  const inserted = await repos.market.insertQuoteTicks(clean);
 
   for (const e of errors) {
     await repos.ops.logIngestError(JOB, e.symbol, e.message);

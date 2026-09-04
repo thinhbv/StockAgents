@@ -265,6 +265,43 @@ test('runPollQuotes bỏ qua ngày nghỉ lễ dù đang trong giờ giao dịch
   assert.equal(rows[0].n, 0, 'ngày sàn đóng cửa không được sinh tick nào');
 });
 
+test('runPollQuotes bỏ tick nằm ngoài biên độ trần/sàn so với giá tham chiếu', async () => {
+  const broker = createBroker({ core: createFakeCore(), logger: silent, sleep: noSleep });
+  // fake_core.getQuote trả giá theo currentSymbol: 'HOSE:FPT' -> base = 100 + ('T'.charCodeAt % 50) = 134.
+  // Đặt tham chiếu quá xa (10.000) để 134 chắc chắn rơi ngoài biên độ ±7%.
+  await client.query(
+    `INSERT INTO ohlcv_daily (symbol, trade_date, open, high, low, close, volume)
+     VALUES ('HOSE:FPT', '2026-07-19', 10000, 10000, 10000, 10000, 1000)`);
+
+  const result = await runPollQuotes({
+    broker, repos, symbols: ['HOSE:FPT'], logger: silent,
+    now: new Date('2026-07-20T10:00:00+07:00'),
+  });
+
+  assert.equal(result.inserted, 0, 'tick ngoài biên độ không được ghi');
+  assert.equal(result.failed, 1);
+  const { rows } = await client.query(
+    `SELECT message FROM ingest_errors WHERE symbol = 'HOSE:FPT' ORDER BY id DESC LIMIT 1`);
+  assert.match(rows[0].message, /ngoài biên độ/);
+});
+
+test('runPollQuotes vẫn ghi tick nằm trong biên độ trần/sàn hợp lệ', async () => {
+  const broker = createBroker({ core: createFakeCore(), logger: silent, sleep: noSleep });
+  // Tham chiếu 135 -> biên độ ±7% làm tròn theo bước giá còn [130, 140],
+  // tick giả 134 (công thức cố định của fake_core cho 'HOSE:FPT') nằm trong.
+  await client.query(
+    `INSERT INTO ohlcv_daily (symbol, trade_date, open, high, low, close, volume)
+     VALUES ('HOSE:FPT', '2026-07-19', 135, 135, 135, 135, 1000)`);
+
+  const result = await runPollQuotes({
+    broker, repos, symbols: ['HOSE:FPT'], logger: silent,
+    now: new Date('2026-07-20T10:00:00+07:00'),
+  });
+
+  assert.equal(result.inserted, 1);
+  assert.equal(result.failed, 0);
+});
+
 test('runPollQuotes không làm gì khi danh sách mã rỗng', async () => {
   const broker = createBroker({ core: createFakeCore(), logger: silent, sleep: noSleep });
   const result = await runPollQuotes({ broker, repos, symbols: [], logger: silent });
