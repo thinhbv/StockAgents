@@ -9,7 +9,7 @@ const API_URL = 'https://api.deepseek.com/chat/completions';
 export function createDeepSeekProvider({ apiKey, model, fetchImpl = fetch }) {
   const inner = createOpenAiProvider({ apiKey, model, fetchImpl, apiUrl: API_URL });
   return {
-    name: 'deepseek',
+    name: 'deepseek', model,
     async complete(args) {
       try {
         return await inner.complete(args);

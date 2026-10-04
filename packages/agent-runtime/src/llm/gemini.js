@@ -9,7 +9,7 @@ const BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 export function createGeminiProvider({ apiKey, model, fetchImpl = fetch, baseUrl = BASE }) {
   return {
-    name: 'gemini',
+    name: 'gemini', model,
     // 4096, không phải 2048 mặc định cũ — xem lý do trong anthropic.js: agent
     // giờ có thể ra 8-10 quyết định/phiên từ khi bỏ trần số vị thế, và JSON
     // dài bị cắt giữa chừng sẽ để lại phần tử rỗng ở cuối mảng `decisions`.
@@ -37,7 +37,16 @@ export function createGeminiProvider({ apiKey, model, fetchImpl = fetch, baseUrl
       if (!text) throw new Error('gemini: phản hồi rỗng — không lấy được JSON');
 
       const parsed = JSON.parse(text);
-      return parsed.decisions ?? parsed;
+      const u = body.usageMetadata ?? {};
+      return {
+        decisions: parsed.decisions ?? parsed,
+        usage: {
+          inputTokens: u.promptTokenCount ?? 0,
+          outputTokens: u.candidatesTokenCount ?? 0,
+          cacheReadTokens: u.cachedContentTokenCount ?? 0,
+          cacheWriteTokens: 0,
+        },
+      };
     },
   };
 }

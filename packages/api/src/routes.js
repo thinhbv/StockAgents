@@ -36,6 +36,20 @@ export function createRoutes({
     return { date, state: s.state, dataCapturedAt: s.data_captured_at, note: s.note };
   }
 
+  /**
+   * Thống kê token LLM — tổng theo agent (mặc định 7 ngày gần nhất) kèm
+   * N bản ghi gần nhất để xem chi tiết từng lượt gọi trên dashboard.
+   */
+  async function llmUsage({ query = {} }) {
+    const sinceHours = intParam(query.sinceHours, 24 * 7, 24 * 90);
+    const limit = intParam(query.limit, 100, MAX_LIMIT);
+    const [totals, recent] = await Promise.all([
+      repos.llmUsage.totalsByAgent({ sinceHours }),
+      repos.llmUsage.recent({ limit }),
+    ]);
+    return { sinceHours, totals, recent };
+  }
+
   /** Bảng giá 30 mã trong universe agent đang theo dõi — dùng cho tab thị trường. */
   async function quotes() {
     const universe = await repos.universe.listActive();
@@ -322,6 +336,6 @@ export function createRoutes({
 
   return {
     session, leaderboard, agent, positions, decisions, lessons, events, history,
-    modelCatalog, agentConfig, updateAgentConfig, updateAgentRisk, quotes,
+    modelCatalog, agentConfig, updateAgentConfig, updateAgentRisk, quotes, llmUsage,
   };
 }

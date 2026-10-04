@@ -14,13 +14,15 @@ export function createStubProvider({ script = [] } = {}) {
     exitPlan: {},
   }];
 
+  const zeroUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+
   return {
-    name: 'stub',
+    name: 'stub', model: 'stub',
     async complete() {
-      if (script.length === 0) return structuredClone(fallback);
+      if (script.length === 0) return { decisions: structuredClone(fallback), usage: zeroUsage };
       const out = script[Math.min(i, script.length - 1)];
       i++;
-      return structuredClone(out);
+      return { decisions: structuredClone(out), usage: zeroUsage };
     },
   };
 }

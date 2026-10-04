@@ -1,7 +1,7 @@
 import {
   createAgentsRepo, createTradingRepo, createTriggersRepo,
   createEventsRepo, createOpsRepo, createUniverseRepo, createMarketRepo,
-  createLessonsRepo, createNewsRepo,
+  createLessonsRepo, createNewsRepo, createLlmUsageRepo,
 } from '@stockagents/db';
 import { toVnd } from '../sim/vn_rules.js';
 import { createEngine } from '../sim/engine.js';
@@ -33,6 +33,7 @@ export function createOrchestrator({ client, logger = console }) {
     market: createMarketRepo(client),
     lessons: createLessonsRepo(client),
     news: createNewsRepo(client),
+    llmUsage: createLlmUsageRepo(client),
   };
 
   // `tradeDate` là ngày MÔ PHỎNG, không phải ngày thật lúc ghi event — phát

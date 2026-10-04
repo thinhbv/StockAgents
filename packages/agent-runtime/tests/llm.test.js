@@ -77,21 +77,22 @@ test('validateDecision gom NHIỀU lỗi, không dừng ở lỗi đầu', () =>
 test('stub provider trả kết quả tất định theo kịch bản', async () => {
   const p = createStubProvider({ script: [[good]] });
   const first = await p.complete({ system: 's', messages: [], jsonSchema: {} });
-  assert.deepEqual(first, [good]);
+  assert.deepEqual(first.decisions, [good]);
+  assert.deepEqual(first.usage, { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
 });
 
 test('stub provider lặp lại phần tử cuối khi hết kịch bản', async () => {
   const p = createStubProvider({ script: [[good]] });
   await p.complete({ system: 's', messages: [], jsonSchema: {} });
   const second = await p.complete({ system: 's', messages: [], jsonSchema: {} });
-  assert.deepEqual(second, [good]);
+  assert.deepEqual(second.decisions, [good]);
 });
 
 test('stub provider mặc định trả HOLD khi không có kịch bản', async () => {
   const p = createStubProvider({});
   const r = await p.complete({ system: 's', messages: [], jsonSchema: {} });
-  assert.equal(Array.isArray(r), true);
-  assert.equal(r[0].action, 'HOLD');
+  assert.equal(Array.isArray(r.decisions), true);
+  assert.equal(r.decisions[0].action, 'HOLD');
 });
 
 test('createProvider chọn stub mà không cần API key', () => {
@@ -113,11 +114,15 @@ test('createProvider từ chối provider không biết', () => {
 test('anthropic provider rút decisions từ tool_use', async () => {
   const fetchImpl = async () => ({
     ok: true,
-    json: async () => ({ content: [{ type: 'tool_use', input: { decisions: [good] } }] }),
+    json: async () => ({
+      content: [{ type: 'tool_use', input: { decisions: [good] } }],
+      usage: { input_tokens: 500, output_tokens: 80 },
+    }),
   });
   const p = createAnthropicProvider({ apiKey: 'k', model: 'm', fetchImpl });
   const r = await p.complete({ system: 's', messages: [], jsonSchema: {} });
-  assert.deepEqual(r, [good]);
+  assert.deepEqual(r.decisions, [good]);
+  assert.deepEqual(r.usage, { inputTokens: 500, outputTokens: 80, cacheReadTokens: 0, cacheWriteTokens: 0 });
 });
 
 test('anthropic provider báo lỗi rõ khi phản hồi thiếu tool_use', async () => {

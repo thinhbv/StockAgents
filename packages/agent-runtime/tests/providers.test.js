@@ -35,7 +35,8 @@ test('openai rút decisions từ tool_calls', async () => {
     choices: [{ message: { tool_calls: [{ function: { arguments: JSON.stringify({ decisions: [DECISION] }) } }] } }],
   });
   const p = createOpenAiProvider({ apiKey: 'k', model: 'gpt-5', fetchImpl });
-  assert.deepEqual(await p.complete({ system: 's', messages: [], jsonSchema: {} }), [DECISION]);
+  const r = await p.complete({ system: 's', messages: [], jsonSchema: {} });
+  assert.deepEqual(r.decisions, [DECISION]);
 });
 
 test('openai gửi system như một message vai system', async () => {
@@ -79,7 +80,8 @@ test('gemini rút decisions từ text đã ép JSON', async () => {
     candidates: [{ content: { parts: [{ text: JSON.stringify({ decisions: [DECISION] }) }] } }],
   });
   const p = createGeminiProvider({ apiKey: 'k', model: 'gemini-2.5-pro', fetchImpl });
-  assert.deepEqual(await p.complete({ system: 's', messages: [], jsonSchema: {} }), [DECISION]);
+  const r = await p.complete({ system: 's', messages: [], jsonSchema: {} });
+  assert.deepEqual(r.decisions, [DECISION]);
 });
 
 test('gemini gửi persona qua systemInstruction, KHÔNG lẫn vào contents', async () => {
@@ -212,7 +214,7 @@ test('đầu ra của mọi provider đều qua được validateDecision', asyn
     const { fetchImpl } = capture(body);
     const p = makers[name]({ apiKey: 'k', model: 'm', fetchImpl });
     const out = await p.complete({ system: 's', messages: [], jsonSchema: {} });
-    const v = validateDecision(out[0]);
+    const v = validateDecision(out.decisions[0]);
     assert.equal(v.ok, true, `${name}: đầu ra không qua được schema — ${v.errors?.join('; ')}`);
   }
 });

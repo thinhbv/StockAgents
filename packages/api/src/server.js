@@ -3,6 +3,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   createClient, createAgentsRepo, createTradingRepo,
   createOpsRepo, createEventsRepo, createLessonsRepo, createMarketRepo, createUniverseRepo,
+  createLlmUsageRepo,
 } from '@stockagents/db';
 import { loadApiConfig } from './config.js';
 import { createRouter } from './router.js';
@@ -30,7 +31,7 @@ export function createServer({ config, logger = console }) {
     agents: createAgentsRepo(client), trading: createTradingRepo(client),
     ops: createOpsRepo(client), events: createEventsRepo(client),
     lessons: createLessonsRepo(client), market: createMarketRepo(client),
-    universe: createUniverseRepo(client),
+    universe: createUniverseRepo(client), llmUsage: createLlmUsageRepo(client),
   };
   const routes = createRoutes({ client, repos });
   const hub = createSseHub({ eventsRepo: repos.events });
@@ -38,6 +39,7 @@ export function createServer({ config, logger = console }) {
   const router = createRouter();
   router.get('/api/session', routes.session);
   router.get('/api/quotes', routes.quotes);
+  router.get('/api/llm-usage', routes.llmUsage);
   router.get('/api/leaderboard', routes.leaderboard);
   router.get('/api/events', routes.events);
   router.get('/api/agents/:id', routes.agent);

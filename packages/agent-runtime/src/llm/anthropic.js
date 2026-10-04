@@ -9,7 +9,7 @@ const API_URL = 'https://api.anthropic.com/v1/messages';
 
 export function createAnthropicProvider({ apiKey, model, fetchImpl = fetch }) {
   return {
-    name: 'anthropic',
+    name: 'anthropic', model,
     // 2048 từng đủ khi agent chỉ mua 1-2 mã mỗi phiên; từ khi bỏ trần số vị
     // thế/số mã mới (agent tự do dàn trải), một phiên có thể ra 8-10 quyết
     // định cùng lúc — đã thấy thật: tool_use bị cắt giữa chừng, phần tử cuối
@@ -41,7 +41,16 @@ export function createAnthropicProvider({ apiKey, model, fetchImpl = fetch }) {
       if (!toolUse) {
         throw new Error('anthropic: phản hồi không chứa tool_use — không lấy được JSON');
       }
-      return toolUse.input.decisions ?? toolUse.input;
+      const u = body.usage ?? {};
+      return {
+        decisions: toolUse.input.decisions ?? toolUse.input,
+        usage: {
+          inputTokens: u.input_tokens ?? 0,
+          outputTokens: u.output_tokens ?? 0,
+          cacheReadTokens: u.cache_read_input_tokens ?? 0,
+          cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
+        },
+      };
     },
   };
 }

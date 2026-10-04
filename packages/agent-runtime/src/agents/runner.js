@@ -42,15 +42,30 @@ export function createRunner({ repos, engine, provider, logger = console }) {
   async function runOnce({ agentId, agentDef, context, ctx }) {
     let raw;
     try {
-      raw = await provider.complete({
+      const completion = await provider.complete({
         system: agentDef.personaPrompt,
         messages: [{ role: 'user', content: JSON.stringify(context) }],
         jsonSchema: DECISION_SCHEMA,
       });
+      raw = completion.decisions;
+      // Log token TRƯỚC khi validate/submit lệnh — một quyết định sai schema
+      // hay lệnh bị từ chối vẫn đã tốn đúng số token này, không được để sót
+      // khỏi thống kê chỉ vì bước sau nó hỏng.
+      if (repos.llmUsage) {
+        await repos.llmUsage.insertUsage({
+          agentId, provider: provider.name, model: provider.model, purpose: 'decision',
+          ...completion.usage, succeeded: true,
+        });
+      }
     } catch (err) {
       // Provider chết thì agent BỎ LƯỢT — không fallback sang model khác,
       // vì như vậy sẽ làm hỏng việc so sánh giữa các agent (spec §6.5).
       logger.warn(`[runner] ${agentId} bỏ lượt: ${err.message}`);
+      if (repos.llmUsage) {
+        await repos.llmUsage.insertUsage({
+          agentId, provider: provider.name, model: provider.model, purpose: 'decision', succeeded: false,
+        });
+      }
       return { status: 'SKIPPED', error: err.message, decisions: [], invalid: [], results: [] };
     }
 

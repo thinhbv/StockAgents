@@ -25,6 +25,7 @@
 <nav class="tabs" role="tablist" aria-label="Chế độ xem">
   <button type="button" id="tab-btn-market" class="tab-btn" role="tab" aria-selected="true" aria-controls="tab-market">Bảng giá thị trường</button>
   <button type="button" id="tab-btn-agents" class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-agents">AI Agents</button>
+  <button type="button" id="tab-btn-usage" class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-usage">Token LLM</button>
 </nav>
 
 <section id="tab-market" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-market">
@@ -131,6 +132,45 @@
 
 </main>
 
+<section id="tab-usage" class="tab-panel board" role="tabpanel" aria-labelledby="tab-btn-usage" hidden>
+  <h2 class="eyebrow">Token LLM theo agent — 7 ngày gần nhất</h2>
+  <table class="price-board" id="usage-totals-table">
+    <thead>
+      <tr>
+        <th scope="col">Agent</th>
+        <th scope="col" class="num">Lượt gọi</th>
+        <th scope="col" class="num">Lượt lỗi</th>
+        <th scope="col" class="num">Input token</th>
+        <th scope="col" class="num">Output token</th>
+        <th scope="col" class="num">Cache đọc</th>
+        <th scope="col" class="num">Tổng token</th>
+      </tr>
+    </thead>
+    <tbody id="usage-totals-body">
+      <tr class="empty"><td colspan="7">Đang tải…</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="eyebrow" style="margin-top:28px">Nhật ký gần nhất</h2>
+  <table class="price-board" id="usage-recent-table">
+    <thead>
+      <tr>
+        <th scope="col">Lúc</th>
+        <th scope="col">Agent</th>
+        <th scope="col">Provider / model</th>
+        <th scope="col">Mục đích</th>
+        <th scope="col" class="num">Input</th>
+        <th scope="col" class="num">Output</th>
+        <th scope="col" class="num">Cache đọc</th>
+        <th scope="col">Kết quả</th>
+      </tr>
+    </thead>
+    <tbody id="usage-recent-body">
+      <tr class="empty"><td colspan="8">Đang tải…</td></tr>
+    </tbody>
+  </table>
+</section>
+
 <script>
   // Chuyển tab — tách riêng khỏi app.js (module xử lý dữ liệu AI Agents) để
   // không đụng vào luồng polling/SSE hiện có. app.js vẫn chạy nền bình
@@ -138,6 +178,7 @@
   const tabs = [
     { btn: document.getElementById('tab-btn-market'), panel: document.getElementById('tab-market') },
     { btn: document.getElementById('tab-btn-agents'), panel: document.getElementById('tab-agents') },
+    { btn: document.getElementById('tab-btn-usage'), panel: document.getElementById('tab-usage') },
   ];
   for (const { btn, panel } of tabs) {
     btn.addEventListener('click', () => {
@@ -203,6 +244,52 @@
   }
   refreshQuotes();
   setInterval(refreshQuotes, QUOTES_REFRESH_MS);
+
+  // Token LLM — tự đọc /api/llm-usage mỗi 20s, chỉ khi tab đang mở (không
+  // đáng để phí một request mỗi 20s cho một bảng ít ai nhìn liên tục).
+  const USAGE_REFRESH_MS = 20000;
+  const intFmt = (n) => n === null || n === undefined ? '—' : Math.round(n).toLocaleString('vi-VN');
+
+  async function refreshUsage() {
+    const totalsBody = document.getElementById('usage-totals-body');
+    const recentBody = document.getElementById('usage-recent-body');
+    try {
+      const res = await fetch('/api/llm-usage');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { totals, recent } = await res.json();
+
+      totalsBody.innerHTML = totals.length === 0
+        ? '<tr class="empty"><td colspan="7">Chưa có lượt gọi nào.</td></tr>'
+        : totals.map((t) => `<tr>
+            <td>${t.agentId}</td>
+            <td class="num">${intFmt(t.requests)}</td>
+            <td class="num ${t.failedRequests > 0 ? 'down' : ''}">${intFmt(t.failedRequests)}</td>
+            <td class="num">${intFmt(t.inputTokens)}</td>
+            <td class="num">${intFmt(t.outputTokens)}</td>
+            <td class="num">${intFmt(t.cacheReadTokens)}</td>
+            <td class="num">${intFmt(t.inputTokens + t.outputTokens)}</td>
+          </tr>`).join('');
+
+      recentBody.innerHTML = recent.length === 0
+        ? '<tr class="empty"><td colspan="8">Chưa có lượt gọi nào.</td></tr>'
+        : recent.map((r) => `<tr>
+            <td>${timeFmt(r.createdAt)}</td>
+            <td>${r.agentId}</td>
+            <td>${r.provider} / ${r.model}</td>
+            <td>${r.purpose === 'decision' ? 'quyết định' : 'rút kinh nghiệm'}</td>
+            <td class="num">${intFmt(r.inputTokens)}</td>
+            <td class="num">${intFmt(r.outputTokens)}</td>
+            <td class="num">${intFmt(r.cacheReadTokens)}</td>
+            <td class="${r.succeeded ? 'up' : 'down'}">${r.succeeded ? 'OK' : 'bỏ lượt'}</td>
+          </tr>`).join('');
+    } catch (err) {
+      const msg = `<tr class="empty"><td colspan="8">Không tải được: ${err.message}</td></tr>`;
+      totalsBody.innerHTML = msg.replace('colspan="8"', 'colspan="7"');
+      recentBody.innerHTML = msg;
+    }
+  }
+  refreshUsage();
+  setInterval(refreshUsage, USAGE_REFRESH_MS);
 </script>
 <script type="module" src="/app.js"></script>
 </body>

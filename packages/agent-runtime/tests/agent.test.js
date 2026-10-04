@@ -276,7 +276,15 @@ test('provider ném lỗi thì runOnce trả SKIPPED, không sập', async () =>
 });
 
 test('provider trả thứ không phải mảng vẫn xử lý được', async () => {
-  const provider = { name: 'weird', async complete() { return { action: 'HOLD', symbol: 'HOSE:FPT', reason: 'một object đơn lẻ', confidence: 0.5 }; } };
+  const provider = {
+    name: 'weird',
+    async complete() {
+      return {
+        decisions: { action: 'HOLD', symbol: 'HOSE:FPT', reason: 'một object đơn lẻ', confidence: 0.5 },
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      };
+    },
+  };
   const runner = createRunner({ repos, engine, provider, logger: silent });
 
   const r = await runner.runOnce({

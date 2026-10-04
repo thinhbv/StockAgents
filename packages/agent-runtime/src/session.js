@@ -1,6 +1,6 @@
 import {
   createAgentsRepo, createTradingRepo, createUniverseRepo, createMarketRepo, createNewsRepo,
-  createFundamentalsRepo, createIntradayFlowRepo, createEventsRepo,
+  createFundamentalsRepo, createIntradayFlowRepo, createEventsRepo, createLlmUsageRepo,
 } from '@stockagents/db';
 import { toVnd } from './sim/vn_rules.js';
 import { createEngine } from './sim/engine.js';
@@ -29,6 +29,7 @@ export async function runSession({
     fundamentals: createFundamentalsRepo(client),
     intradayFlow: createIntradayFlowRepo(client),
     events: createEventsRepo(client),
+    llmUsage: createLlmUsageRepo(client),
   };
 
   const universe = await repos.universe.listActive();

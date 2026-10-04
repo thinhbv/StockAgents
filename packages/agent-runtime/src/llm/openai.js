@@ -9,7 +9,7 @@ const API_URL = 'https://api.openai.com/v1/chat/completions';
 
 export function createOpenAiProvider({ apiKey, model, fetchImpl = fetch, apiUrl = API_URL }) {
   return {
-    name: 'openai',
+    name: 'openai', model,
     // 4096, không phải 2048 mặc định cũ — xem lý do trong anthropic.js: agent
     // giờ có thể ra 8-10 quyết định/phiên từ khi bỏ trần số vị thế, và JSON
     // dài bị cắt giữa chừng sẽ để lại phần tử rỗng ở cuối mảng `decisions`.
@@ -34,7 +34,20 @@ export function createOpenAiProvider({ apiKey, model, fetchImpl = fetch, apiUrl 
       if (!call) throw new Error('openai: phản hồi không chứa tool_calls — không lấy được JSON');
 
       const args = JSON.parse(call.function.arguments);
-      return args.decisions ?? args;
+      const u = body.usage ?? {};
+      return {
+        decisions: args.decisions ?? args,
+        usage: {
+          inputTokens: u.prompt_tokens ?? 0,
+          outputTokens: u.completion_tokens ?? 0,
+          // OpenAI/DeepSeek tự cache tiền tố lặp lại (prompt >1024 token),
+          // không cần cache_control — số đọc-từ-cache nằm trong
+          // prompt_tokens_details, DeepSeek dùng tên field riêng.
+          cacheReadTokens: u.prompt_tokens_details?.cached_tokens
+            ?? u.prompt_cache_hit_tokens ?? 0,
+          cacheWriteTokens: 0,
+        },
+      };
     },
   };
 }

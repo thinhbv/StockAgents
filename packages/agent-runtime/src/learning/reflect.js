@@ -37,13 +37,25 @@ export async function reflect({ repos, agentId, agentDef, provider, tradeDate, e
 
   let raw;
   try {
-    raw = await provider.complete({
+    const completion = await provider.complete({
       system: `${agentDef.personaPrompt}\n\nBạn đang nhìn lại các lệnh đã thực hiện để rút ra bài học cho lần sau. Bài học phải cụ thể và kiểm chứng được, không phải lời khuyên chung chung. Nêu rõ lệnh nào dẫn tới bài học đó.`,
       messages: [{ role: 'user', content: JSON.stringify({ tradeDate, trades: summary }) }],
       jsonSchema: LESSON_SCHEMA,
     });
+    raw = completion.decisions;
+    if (repos.llmUsage) {
+      await repos.llmUsage.insertUsage({
+        agentId, provider: provider.name, model: provider.model, purpose: 'reflect',
+        ...completion.usage, succeeded: true,
+      });
+    }
   } catch (err) {
     logger.warn(`[reflect] ${agentId} bỏ vòng học: ${err.message}`);
+    if (repos.llmUsage) {
+      await repos.llmUsage.insertUsage({
+        agentId, provider: provider.name, model: provider.model, purpose: 'reflect', succeeded: false,
+      });
+    }
     return { status: 'SKIPPED', error: err.message, created: 0, retired: 0 };
   }
 
