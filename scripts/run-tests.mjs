@@ -24,9 +24,11 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
-// tradingview_mcp là một git repo RIÊNG với test riêng, phần lớn cần
+// tradingview-mcp là một git repo RIÊNG với test riêng, phần lớn cần
 // TradingView Desktop đang chạy. Nó không thuộc suite của dự án này.
-const SKIP_DIRS = new Set(['node_modules', '.git', 'tradingview_mcp', 'coverage']);
+// (Tên thư mục thật dùng gạch ngang, không phải gạch dưới — SKIP_DIRS từng
+// gõ nhầm 'tradingview_mcp' nên repo này vẫn lọt vào chạy suốt từ đầu.)
+const SKIP_DIRS = new Set(['node_modules', '.git', 'tradingview-mcp', 'coverage']);
 
 async function findTestFiles(dir) {
   const found = [];

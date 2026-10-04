@@ -1,13 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import * as core from 'tradingview-mcp/core';
 import {
   createClient, loadConfig, runMigrations,
   createUniverseRepo, createMarketRepo, createOpsRepo, createEventsRepo,
   createNewsRepo, createFundamentalsRepo, createIntradayFlowRepo,
 } from '@stockagents/db';
-import { createBroker } from './cdp/broker.js';
 import { startScheduler } from './scheduler.js';
 import { nowVnDate, isTradingDay } from './lib/vn_time.js';
 import { runIngestPrices } from './jobs/ingest_prices.js';
@@ -78,7 +76,6 @@ async function main() {
   // cùng gọi lúc khởi động — runMigrations() tự khoá advisory quanh cả đợt.
   await runMigrations(client);
   const repos = createRepos(client);
-  const broker = createBroker({ core });
 
   await seedUniverse(repos);
 
@@ -106,7 +103,7 @@ async function main() {
 
   const scheduler = startScheduler({
     jobs: {
-      ingest_prices: onTradingDayOnly('ingest_prices', () => runIngestPrices({ broker, repos })),
+      ingest_prices: onTradingDayOnly('ingest_prices', () => runIngestPrices({ repos })),
       // Phase 1 chưa có vị thế nên poll toàn universe.
       // Phase 3 sẽ thay bằng hợp nhất các mã đang giữ của 5 agent.
       //
@@ -117,7 +114,7 @@ async function main() {
       // watch_tick cũng xong — scheduler vẫn chỉ thấy 1 "job" đang chạy.
       poll_quotes: async () => {
         const symbols = (await repos.universe.listActive()).map(s => s.symbol);
-        const result = await runPollQuotes({ broker, repos, symbols });
+        const result = await runPollQuotes({ repos, symbols });
         if (!result.skipped) {
           await spawnTask('watch:tick', ['--date', nowVnDate(), ...(cfg.simStub ? ['--stub'] : [])]);
         }

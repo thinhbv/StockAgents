@@ -2,8 +2,8 @@
   {
     "id": "claude_value",
     "name": "Nhà đầu tư số 1",
-    "provider": "anthropic",
-    "model": "claude-haiku-4-5-20251001",
+    "provider": "openai",
+    "model": "gpt-5-mini",
     "initialCapital": 1000000000,
     "riskConfig": {
       "maxPositionPctNav": 20,
@@ -14,8 +14,8 @@
   {
     "id": "gpt_momentum",
     "name": "Nhà đầu tư số 2",
-    "provider": "anthropic",
-    "model": "claude-haiku-4-5-20251001",
+    "provider": "openai",
+    "model": "gpt-5-mini",
     "initialCapital": 1000000000,
     "riskConfig": {
       "maxPositionPctNav": 20,
@@ -26,8 +26,8 @@
   {
     "id": "gemini_news",
     "name": "Nhà đầu tư số 3",
-    "provider": "anthropic",
-    "model": "claude-haiku-4-5-20251001",
+    "provider": "openai",
+    "model": "gpt-5-mini",
     "initialCapital": 1000000000,
     "riskConfig": {
       "maxPositionPctNav": 20,
@@ -38,8 +38,8 @@
   {
     "id": "deepseek_quant",
     "name": "Nhà đầu tư số 4",
-    "provider": "anthropic",
-    "model": "claude-haiku-4-5-20251001",
+    "provider": "openai",
+    "model": "gpt-5",
     "initialCapital": 1000000000,
     "riskConfig": {
       "maxPositionPctNav": 15,
@@ -50,8 +50,8 @@
   {
     "id": "claude_contrarian",
     "name": "Nhà đầu tư số 5",
-    "provider": "anthropic",
-    "model": "claude-haiku-4-5-20251001",
+    "provider": "openai",
+    "model": "gpt-5-mini",
     "initialCapital": 1000000000,
     "riskConfig": {
       "maxPositionPctNav": 20,

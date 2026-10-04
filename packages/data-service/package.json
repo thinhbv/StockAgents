@@ -5,7 +5,6 @@
   "type": "module",
   "main": "src/index.js",
   "dependencies": {
-    "@stockagents/db": "*",
-    "tradingview-mcp": "file:../../tradingview-mcp"
+    "@stockagents/db": "*"
   }
 }

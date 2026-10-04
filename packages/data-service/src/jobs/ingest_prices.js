@@ -1,30 +1,22 @@
-import { collectPrices } from '../collectors/prices.js';
+import { collectVciDailyBars } from '../collectors/vci_prices.js';
 import { computeIndicators, REQUIRED_INDICATOR_KEYS } from '../collectors/indicators_calc.js';
 import { nowVnDate } from '../lib/vn_time.js';
 
 const JOB = 'ingest_prices';
 
 /**
- * Ingest giá + chỉ báo cho toàn bộ universe.
+ * Ingest giá + chỉ báo cho toàn bộ universe — qua API HTTP công khai Vietcap
+ * (VCI), KHÔNG qua CDP/TradingView Desktop nữa (xem collectors/vci_prices.js
+ * để biết lý do bỏ CDP). Không còn bước "kết nối" riêng cần chờ trước vòng
+ * lặp — mỗi mã tự gọi HTTP độc lập, một mã lỗi rơi thẳng vào nhánh catch bên
+ * dưới như mọi lỗi khác, không cần nhánh DATA_STALE riêng cho "mất kết nối".
  * Lỗi một mã không chặn các mã còn lại (spec §5.3).
  */
-export async function runIngestPrices({ broker, repos, logger = console, barCount = 60 }) {
+export async function runIngestPrices({
+  repos, logger = console, barCount = 60, fetchImpl, maxRetries, baseDelayMs, sleep,
+}) {
   const startedAt = Date.now();
   const tradeDate = nowVnDate();
-
-  const connected = await broker.ensureConnected();
-  if (!connected) {
-    await repos.ops.setSessionState(tradeDate, 'DATA_STALE', {
-      note: 'không kết nối được CDP',
-    });
-    await repos.ops.logIngestError(JOB, null, 'không kết nối được CDP');
-    await repos.events.appendEvent({
-      type: 'data.stale',
-      payload: { job: JOB, reason: 'cdp_unavailable' },
-    });
-    logger.error('[ingest_prices] bỏ qua: CDP không khả dụng');
-    return { tradeDate, total: 0, succeeded: 0, failed: 0, failedSymbols: [], durationMs: Date.now() - startedAt };
-  }
 
   const symbols = (await repos.universe.listActive()).map(s => s.symbol);
   const failedSymbols = [];
@@ -32,14 +24,13 @@ export async function runIngestPrices({ broker, repos, logger = console, barCoun
 
   for (const symbol of symbols) {
     try {
-      const bars = await collectPrices(broker, symbol, { count: barCount });
+      const bars = await collectVciDailyBars(symbol, {
+        count: barCount, fetchImpl, maxRetries, baseDelayMs, sleep,
+      });
       await repos.market.upsertOhlcvBars(symbol, bars);
 
-      // Chỉ báo TỰ TÍNH từ bars, không đọc từ TradingView.
-      // `getStudyValues()` lấy giá trị từ Data Window, mà TradingView chỉ
-      // điền khi con trỏ nằm trên chart — chạy tự động lúc 8h30 thì nó trả
-      // rỗng. Đã kiểm chứng trên chart thật: chart có RSI nhưng
-      // getStudyValues() chỉ trả ["Volume"].
+      // Chỉ báo TỰ TÍNH từ bars, không đọc sẵn từ nguồn ngoài — VCI không
+      // trả chỉ báo kỹ thuật, chỉ trả OHLCV thô.
       const parsed = computeIndicators(bars);
       const missing = REQUIRED_INDICATOR_KEYS.filter(k => !Number.isFinite(parsed[k]));
       if (missing.length > 0) {

@@ -1,8 +1,6 @@
 import { test, before, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { withTestDb, resetTables } from '../../../tests/helpers/db.js';
-import { createFakeCore } from '../../../tests/helpers/fake_core.js';
-import { createBroker } from '../src/cdp/broker.js';
 import { runIngestPrices } from '../src/jobs/ingest_prices.js';
 import { runPollQuotes } from '../src/jobs/poll_quotes.js';
 import { runPruneEvents } from '../src/jobs/prune_events.js';
@@ -11,7 +9,7 @@ import {
 } from '@stockagents/db';
 
 const silent = { info() {}, warn() {}, error() {} };
-const noSleep = () => Promise.resolve();
+const DAY = 86400;
 
 let client, repos;
 
@@ -38,10 +36,36 @@ beforeEach(async () => {
 });
 after(async () => { await client.close(); });
 
-test('runIngestPrices ghi bars và indicator snapshot cho mọi mã', async () => {
-  const broker = createBroker({ core: createFakeCore(), logger: silent, sleep: noSleep });
+/**
+ * Fake của endpoint chart/OHLCChart/gap-chart — tra theo ticker trong
+ * `barsByTicker`; ticker không có trong map coi như VCI không trả (mảng
+ * rỗng), giống hệt xử lý khi mã lỗi/không niêm yết.
+ */
+function makeBarsFetch(barsByTicker) {
+  return async (url, opts) => {
+    const body = JSON.parse(opts.body);
+    const ticker = body.symbols[0];
+    const rows = barsByTicker[ticker];
+    return { ok: true, json: async () => (rows ? [rows] : []) };
+  };
+}
 
-  const summary = await runIngestPrices({ broker, repos, logger: silent });
+/** `count` bar dao động nhẹ quanh 100 — đủ cho computeIndicators tính RSI/MACD/... (cần ≥35 bar). */
+function genBars(ticker, count) {
+  const t = [], o = [], h = [], l = [], c = [], v = [];
+  const start = 1784592000 - (count - 1) * DAY;
+  for (let i = 0; i < count; i++) {
+    const base = 100 + Math.sin(i / 3) * 5 + i * 0.1;
+    t.push(String(start + i * DAY));
+    o.push(base); h.push(base + 1.5); l.push(base - 1.5); c.push(base + 0.5); v.push(1000 + i);
+  }
+  return { symbol: ticker, t, o, h, l, c, v };
+}
+
+test('runIngestPrices ghi bars và indicator snapshot cho mọi mã', async () => {
+  const fetchImpl = makeBarsFetch({ FPT: genBars('FPT', 60), VCB: genBars('VCB', 60) });
+
+  const summary = await runIngestPrices({ repos, logger: silent, fetchImpl });
 
   assert.equal(summary.total, 2);
   assert.equal(summary.succeeded, 2);
@@ -56,25 +80,20 @@ test('runIngestPrices ghi bars và indicator snapshot cho mọi mã', async () =
 });
 
 test('runIngestPrices là idempotent — chạy hai lần không nhân đôi bars', async () => {
-  const broker = createBroker({ core: createFakeCore(), logger: silent, sleep: noSleep });
+  const fetchImpl = makeBarsFetch({ FPT: genBars('FPT', 60), VCB: genBars('VCB', 60) });
 
-  await runIngestPrices({ broker, repos, logger: silent });
-  await runIngestPrices({ broker, repos, logger: silent });
+  await runIngestPrices({ repos, logger: silent, fetchImpl });
+  await runIngestPrices({ repos, logger: silent, fetchImpl });
 
   const bars = await client.query('SELECT COUNT(*)::int AS n FROM ohlcv_daily');
   assert.equal(bars.rows[0].n, 120);
 });
 
 test('runIngestPrices tiếp tục khi một mã lỗi và ghi vào ingest_errors', async () => {
-  const core = createFakeCore();
-  const original = core.data.getOhlcv;
-  core.data.getOhlcv = async function (...args) {
-    if (core.currentSymbol === 'HOSE:VCB') throw new Error('chart chưa sẵn sàng');
-    return original.apply(this, args);
-  };
-  const broker = createBroker({ core, logger: silent, sleep: noSleep, maxRetries: 1 });
+  // VCB không có trong map -> collectVciDailyBars ném lỗi "không có bar nào trả về".
+  const fetchImpl = makeBarsFetch({ FPT: genBars('FPT', 60) });
 
-  const summary = await runIngestPrices({ broker, repos, logger: silent });
+  const summary = await runIngestPrices({ repos, logger: silent, fetchImpl });
 
   assert.equal(summary.succeeded, 1);
   assert.deepEqual(summary.failedSymbols, ['HOSE:VCB']);
@@ -86,8 +105,8 @@ test('runIngestPrices tiếp tục khi một mã lỗi và ghi vào ingest_error
 });
 
 test('runIngestPrices đặt session_state là DATA_READY khi mọi mã thành công', async () => {
-  const broker = createBroker({ core: createFakeCore(), logger: silent, sleep: noSleep });
-  const summary = await runIngestPrices({ broker, repos, logger: silent });
+  const fetchImpl = makeBarsFetch({ FPT: genBars('FPT', 60), VCB: genBars('VCB', 60) });
+  const summary = await runIngestPrices({ repos, logger: silent, fetchImpl });
 
   const state = await repos.ops.getSessionState(summary.tradeDate);
   assert.equal(state.state, 'DATA_READY');
@@ -95,10 +114,9 @@ test('runIngestPrices đặt session_state là DATA_READY khi mọi mã thành c
 });
 
 test('runIngestPrices đặt session_state là DATA_STALE khi mọi mã đều lỗi', async () => {
-  const core = createFakeCore({ failFirst: 99 });
-  const broker = createBroker({ core, logger: silent, sleep: noSleep, maxRetries: 1 });
+  const fetchImpl = makeBarsFetch({}); // không mã nào có bar
 
-  const summary = await runIngestPrices({ broker, repos, logger: silent });
+  const summary = await runIngestPrices({ repos, logger: silent, fetchImpl });
 
   assert.equal(summary.succeeded, 0);
   const state = await repos.ops.getSessionState(summary.tradeDate);
@@ -107,15 +125,9 @@ test('runIngestPrices đặt session_state là DATA_STALE khi mọi mã đều l
 });
 
 test('runIngestPrices đặt session_state là DATA_PARTIAL khi một số mã lỗi và KHÔNG làm mới dataCapturedAt', async () => {
-  const core = createFakeCore();
-  const original = core.data.getOhlcv;
-  core.data.getOhlcv = async function (...args) {
-    if (core.currentSymbol === 'HOSE:VCB') throw new Error('chart chưa sẵn sàng');
-    return original.apply(this, args);
-  };
-  const broker = createBroker({ core, logger: silent, sleep: noSleep, maxRetries: 1 });
+  const fetchImpl = makeBarsFetch({ FPT: genBars('FPT', 60) });
 
-  const summary = await runIngestPrices({ broker, repos, logger: silent });
+  const summary = await runIngestPrices({ repos, logger: silent, fetchImpl });
 
   assert.equal(summary.succeeded, 1);
   assert.deepEqual(summary.failedSymbols, ['HOSE:VCB']);
@@ -128,13 +140,12 @@ test('runIngestPrices đặt session_state là DATA_PARTIAL khi một số mã l
 });
 
 test('mã không đủ bar để tính chỉ báo bị tính là thất bại, giá vẫn được ghi', async () => {
-  // Chỉ báo giờ TỰ TÍNH từ bars, không đọc từ TradingView. Mã mới lên sàn
-  // chưa đủ 35 phiên thì không tính được RSI/MACD — phải coi là thất bại,
-  // không được ghi một snapshot khuyết trông giống dữ liệu hợp lệ.
-  const core = createFakeCore();
-  const broker = createBroker({ core, logger: silent, sleep: noSleep });
+  // Chỉ báo TỰ TÍNH từ bars. Mã mới lên sàn chưa đủ 35 phiên thì không tính
+  // được RSI/MACD — phải coi là thất bại, không được ghi một snapshot khuyết
+  // trông giống dữ liệu hợp lệ.
+  const fetchImpl = makeBarsFetch({ FPT: genBars('FPT', 10), VCB: genBars('VCB', 10) });
 
-  const summary = await runIngestPrices({ broker, repos, logger: silent, barCount: 10 });
+  const summary = await runIngestPrices({ repos, logger: silent, barCount: 10, fetchImpl });
 
   assert.equal(summary.succeeded, 0);
   assert.equal(summary.failedSymbols.length, 2);
@@ -152,15 +163,9 @@ test('mã không đủ bar để tính chỉ báo bị tính là thất bại, g
 });
 
 test('một mã lỗi lấy giá không chặn mã còn lại, và vào DATA_PARTIAL', async () => {
-  const core = createFakeCore();
-  const original = core.data.getOhlcv;
-  core.data.getOhlcv = async function (...args) {
-    if (core.currentSymbol === 'HOSE:VCB') throw new Error('chart chưa sẵn sàng');
-    return original.apply(this, args);
-  };
-  const broker = createBroker({ core, logger: silent, sleep: noSleep, maxRetries: 1 });
+  const fetchImpl = makeBarsFetch({ FPT: genBars('FPT', 60) });
 
-  const summary = await runIngestPrices({ broker, repos, logger: silent });
+  const summary = await runIngestPrices({ repos, logger: silent, fetchImpl });
 
   assert.equal(summary.succeeded, 1);
   assert.deepEqual(summary.failedSymbols, ['HOSE:VCB']);
@@ -179,8 +184,8 @@ test('một mã lỗi lấy giá không chặn mã còn lại, và vào DATA_PAR
 });
 
 test('snapshot chỉ báo chứa giá trị thật, không phải object rỗng', async () => {
-  const broker = createBroker({ core: createFakeCore(), logger: silent, sleep: noSleep });
-  await runIngestPrices({ broker, repos, logger: silent });
+  const fetchImpl = makeBarsFetch({ FPT: genBars('FPT', 60), VCB: genBars('VCB', 60) });
+  await runIngestPrices({ repos, logger: silent, fetchImpl });
 
   const { rows } = await client.query(
     `SELECT payload FROM indicator_snapshot WHERE symbol = 'HOSE:FPT'`);
@@ -194,8 +199,8 @@ test('snapshot chỉ báo chứa giá trị thật, không phải object rỗng'
 });
 
 test('runIngestPrices phát sự kiện data.ingested', async () => {
-  const broker = createBroker({ core: createFakeCore(), logger: silent, sleep: noSleep });
-  await runIngestPrices({ broker, repos, logger: silent });
+  const fetchImpl = makeBarsFetch({ FPT: genBars('FPT', 60), VCB: genBars('VCB', 60) });
+  await runIngestPrices({ repos, logger: silent, fetchImpl });
 
   const events = await repos.events.getEventsSince(0, 10);
   const ingested = events.find(e => e.type === 'data.ingested');
@@ -204,28 +209,41 @@ test('runIngestPrices phát sự kiện data.ingested', async () => {
   assert.equal(ingested.payload.succeeded, 2);
 });
 
-test('runIngestPrices dừng sớm và phát data.stale khi CDP không kết nối được', async () => {
-  const core = createFakeCore({ healthy: false });
-  core.health.launch = async () => { throw new Error('không tìm thấy TradingView'); };
-  const broker = createBroker({ core, logger: silent, sleep: noSleep });
+test('runIngestPrices phát data.stale khi nguồn HTTP lỗi cho mọi mã', async () => {
+  const fetchImpl = async () => ({ ok: false, status: 500 });
 
-  const summary = await runIngestPrices({ broker, repos, logger: silent });
+  const summary = await runIngestPrices({ repos, logger: silent, fetchImpl, maxRetries: 1 });
 
-  assert.equal(summary.total, 0);
+  assert.equal(summary.total, 2);
   assert.equal(summary.succeeded, 0);
 
   const events = await repos.events.getEventsSince(0, 10);
   assert.ok(events.some(e => e.type === 'data.stale'));
 });
 
+/* ---------- runPollQuotes ---------- */
+
+function quoteRow(ticker, {
+  matchPrice = 100, accumulatedVolume = 5000,
+  ceilingPrice = 107, floorPrice = 93, referencePrice = 100,
+} = {}) {
+  return {
+    listingInfo: { symbol: ticker },
+    matchPrice: { matchPrice, accumulatedVolume, ceilingPrice, floorPrice, referencePrice },
+  };
+}
+
+function makeQuotesFetch(rows) {
+  return async () => ({ ok: true, json: async () => rows });
+}
+
 test('runPollQuotes ghi tick cho các mã truyền vào', async () => {
-  const broker = createBroker({ core: createFakeCore(), logger: silent, sleep: noSleep });
+  const fetchImpl = makeQuotesFetch([quoteRow('FPT'), quoteRow('VCB')]);
 
   const result = await runPollQuotes({
-    broker, repos, symbols: ['HOSE:FPT', 'HOSE:VCB'], logger: silent,
+    repos, symbols: ['HOSE:FPT', 'HOSE:VCB'], logger: silent, fetchImpl,
     // Thứ Hai 10:00 giờ VN — trong cửa sổ giao dịch (isTradingWindow), tường
-    // minh chứ không phụ thuộc đồng hồ máy chạy test (finding scheduler
-    // task 9: poll_quotes giờ bỏ qua ngoài giờ giao dịch).
+    // minh chứ không phụ thuộc đồng hồ máy chạy test.
     now: new Date('2026-07-20T10:00:00+07:00'),
   });
 
@@ -237,10 +255,10 @@ test('runPollQuotes ghi tick cho các mã truyền vào', async () => {
 });
 
 test('runPollQuotes bỏ qua ngoài giờ giao dịch, không ghi tick', async () => {
-  const broker = createBroker({ core: createFakeCore(), logger: silent, sleep: noSleep });
+  const fetchImpl = makeQuotesFetch([quoteRow('FPT'), quoteRow('VCB')]);
 
   const result = await runPollQuotes({
-    broker, repos, symbols: ['HOSE:FPT', 'HOSE:VCB'], logger: silent,
+    repos, symbols: ['HOSE:FPT', 'HOSE:VCB'], logger: silent, fetchImpl,
     now: new Date('2026-07-20T12:00:00+07:00'), // giờ nghỉ trưa
   });
 
@@ -248,7 +266,7 @@ test('runPollQuotes bỏ qua ngoài giờ giao dịch, không ghi tick', async (
 });
 
 test('runPollQuotes bỏ qua ngày nghỉ lễ dù đang trong giờ giao dịch', async () => {
-  const broker = createBroker({ core: createFakeCore(), logger: silent, sleep: noSleep });
+  const fetchImpl = makeQuotesFetch([quoteRow('FPT')]);
   // 2026-07-20 là thứ Hai 10:00 — test ngay trên đã chứng minh nó ghi được
   // tick. Thêm đúng ngày đó vào lịch lễ thì phải chuyển thành bỏ qua.
   await client.query(
@@ -256,7 +274,7 @@ test('runPollQuotes bỏ qua ngày nghỉ lễ dù đang trong giờ giao dịch
      ON CONFLICT DO NOTHING`);
 
   const result = await runPollQuotes({
-    broker, repos, symbols: ['HOSE:FPT'], logger: silent,
+    repos, symbols: ['HOSE:FPT'], logger: silent, fetchImpl,
     now: new Date('2026-07-20T10:00:00+07:00'),
   });
 
@@ -265,16 +283,15 @@ test('runPollQuotes bỏ qua ngày nghỉ lễ dù đang trong giờ giao dịch
   assert.equal(rows[0].n, 0, 'ngày sàn đóng cửa không được sinh tick nào');
 });
 
-test('runPollQuotes bỏ tick nằm ngoài biên độ trần/sàn so với giá tham chiếu', async () => {
-  const broker = createBroker({ core: createFakeCore(), logger: silent, sleep: noSleep });
-  // fake_core.getQuote trả giá theo currentSymbol: 'HOSE:FPT' -> base = 100 + ('T'.charCodeAt % 50) = 134.
-  // Đặt tham chiếu quá xa (10.000) để 134 chắc chắn rơi ngoài biên độ ±7%.
-  await client.query(
-    `INSERT INTO ohlcv_daily (symbol, trade_date, open, high, low, close, volume)
-     VALUES ('HOSE:FPT', '2026-07-19', 10000, 10000, 10000, 10000, 1000)`);
+test('runPollQuotes bỏ tick nằm ngoài trần/sàn CHÍNH THỨC do VCI trả — nghi dữ liệu rác', async () => {
+  // Mô phỏng đúng bug thật đã gặp: giá khớp vượt xa ceilingPrice mà nguồn
+  // tự trả về (ACB 22.500 -> "25.350" ngày 2026-08-25, trần thật chỉ 23.750).
+  const fetchImpl = makeQuotesFetch([
+    quoteRow('FPT', { matchPrice: 150, ceilingPrice: 107, floorPrice: 93 }),
+  ]);
 
   const result = await runPollQuotes({
-    broker, repos, symbols: ['HOSE:FPT'], logger: silent,
+    repos, symbols: ['HOSE:FPT'], logger: silent, fetchImpl,
     now: new Date('2026-07-20T10:00:00+07:00'),
   });
 
@@ -285,16 +302,13 @@ test('runPollQuotes bỏ tick nằm ngoài biên độ trần/sàn so với giá
   assert.match(rows[0].message, /ngoài biên độ/);
 });
 
-test('runPollQuotes vẫn ghi tick nằm trong biên độ trần/sàn hợp lệ', async () => {
-  const broker = createBroker({ core: createFakeCore(), logger: silent, sleep: noSleep });
-  // Tham chiếu 135 -> biên độ ±7% làm tròn theo bước giá còn [130, 140],
-  // tick giả 134 (công thức cố định của fake_core cho 'HOSE:FPT') nằm trong.
-  await client.query(
-    `INSERT INTO ohlcv_daily (symbol, trade_date, open, high, low, close, volume)
-     VALUES ('HOSE:FPT', '2026-07-19', 135, 135, 135, 135, 1000)`);
+test('runPollQuotes vẫn ghi tick nằm trong trần/sàn do VCI trả', async () => {
+  const fetchImpl = makeQuotesFetch([
+    quoteRow('FPT', { matchPrice: 105, ceilingPrice: 107, floorPrice: 93 }),
+  ]);
 
   const result = await runPollQuotes({
-    broker, repos, symbols: ['HOSE:FPT'], logger: silent,
+    repos, symbols: ['HOSE:FPT'], logger: silent, fetchImpl,
     now: new Date('2026-07-20T10:00:00+07:00'),
   });
 
@@ -302,9 +316,28 @@ test('runPollQuotes vẫn ghi tick nằm trong biên độ trần/sàn hợp l�
   assert.equal(result.failed, 0);
 });
 
+test('runPollQuotes dùng ohlcv_daily làm lưới an toàn khi VCI không trả trần/sàn', async () => {
+  await client.query(
+    `INSERT INTO ohlcv_daily (symbol, trade_date, open, high, low, close, volume)
+     VALUES ('HOSE:FPT', '2026-07-19', 10000, 10000, 10000, 10000, 1000)`);
+  // matchPrice=134 nhưng KHÔNG có ceilingPrice/floorPrice -> rơi về tính từ
+  // ohlcv_daily (tham chiếu 10.000, band ±7% loại bỏ 134 ngay).
+  const fetchImpl = makeQuotesFetch([
+    quoteRow('FPT', { matchPrice: 134, ceilingPrice: null, floorPrice: null }),
+  ]);
+
+  const result = await runPollQuotes({
+    repos, symbols: ['HOSE:FPT'], logger: silent, fetchImpl,
+    now: new Date('2026-07-20T10:00:00+07:00'),
+  });
+
+  assert.equal(result.inserted, 0);
+  assert.equal(result.failed, 1);
+});
+
 test('runPollQuotes không làm gì khi danh sách mã rỗng', async () => {
-  const broker = createBroker({ core: createFakeCore(), logger: silent, sleep: noSleep });
-  const result = await runPollQuotes({ broker, repos, symbols: [], logger: silent });
+  const fetchImpl = makeQuotesFetch([]);
+  const result = await runPollQuotes({ repos, symbols: [], logger: silent, fetchImpl });
   assert.deepEqual(result, { inserted: 0, failed: 0 });
 });
 
