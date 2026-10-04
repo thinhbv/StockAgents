@@ -5,13 +5,20 @@ const num = (v) => (v === null || v === undefined ? null : Number(v));
 export function createAgentsRepo(client) {
   async function upsertMany(list) {
     for (const a of list) {
+      // `active` đồng bộ MỘT CHIỀU từ config/agents.json xuống DB mỗi lần
+      // chạy (CLI gọi upsertMany này mỗi lượt watch:tick) — tạm dừng/mở lại
+      // một agent chỉ cần sửa trường này trong config, không đụng tới DB
+      // tay. Mặc định TRUE khi agent không khai báo trường này (tương thích
+      // ngược với config cũ chưa có khái niệm tạm dừng).
+      const active = a.active !== false;
       await client.query(
         `INSERT INTO agents (id, name, provider, model, persona_prompt, initial_capital, risk_config, active)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
          ON CONFLICT (id) DO UPDATE SET
            name = EXCLUDED.name, provider = EXCLUDED.provider, model = EXCLUDED.model,
-           persona_prompt = EXCLUDED.persona_prompt, risk_config = EXCLUDED.risk_config`,
-        [a.id, a.name, a.provider, a.model, a.personaPrompt, a.initialCapital, a.riskConfig ?? {}],
+           persona_prompt = EXCLUDED.persona_prompt, risk_config = EXCLUDED.risk_config,
+           active = EXCLUDED.active`,
+        [a.id, a.name, a.provider, a.model, a.personaPrompt, a.initialCapital, a.riskConfig ?? {}, active],
       );
       // Tiền mặt khởi tạo — chỉ đặt khi agent còn mới tinh, để chạy lại
       // upsertMany (CLI làm việc này mỗi lần) không nạp lại tiền cho agent

@@ -21,8 +21,9 @@ const cfg = loadConfig();
 const client = createClient(cfg.databaseUrl);
 
 try {
-  const defs = await loadAgentDefs();
-  await createAgentsRepo(client).upsertMany(defs);
+  const allDefs = await loadAgentDefs();
+  await createAgentsRepo(client).upsertMany(allDefs);
+  const defs = allDefs.filter(d => d.active !== false);
 
   const have = availableProviders();
   if (!values.stub) {

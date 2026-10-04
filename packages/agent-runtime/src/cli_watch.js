@@ -34,8 +34,12 @@ const cfg = loadConfig();
 const client = createClient(cfg.databaseUrl);
 
 try {
-  const defs = await loadAgentDefs();
-  await createAgentsRepo(client).upsertMany(defs);
+  const allDefs = await loadAgentDefs();
+  await createAgentsRepo(client).upsertMany(allDefs);
+  // upsertMany nhận ĐỦ danh sách để DB/dashboard biết agent tạm dừng vẫn tồn
+  // tại (không xóa) — vòng giao dịch bên dưới thì chỉ xử lý agent active,
+  // agent tạm dừng giữ nguyên trạng thái/vị thế, không mở lệnh mới.
+  const defs = allDefs.filter(d => d.active !== false);
 
   if (!values.stub) {
     const have = availableProviders();

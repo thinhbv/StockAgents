@@ -38,6 +38,7 @@
   {
     "id": "deepseek_quant",
     "name": "Nhà đầu tư số 4",
+    "active": false,
     "provider": "openai",
     "model": "gpt-5",
     "initialCapital": 1000000000,
@@ -50,6 +51,7 @@
   {
     "id": "claude_contrarian",
     "name": "Nhà đầu tư số 5",
+    "active": false,
     "provider": "openai",
     "model": "gpt-5-mini",
     "initialCapital": 1000000000,
