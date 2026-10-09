@@ -116,6 +116,48 @@ export function createTradingRepo(client) {
       [id, positionId]);
   }
 
+  /**
+   * Reset một agent về trạng thái "chơi lại từ đầu": XÓA hẳn vị thế đang
+   * giữ (không phải đóng bằng closed_at — đây là thao tác quản trị, không
+   * phải một lệnh bán thật nên không nên để lại dấu vết như thể đã bán) và
+   * nạp lại tiền mặt bằng đúng vốn ban đầu. KHÔNG đụng tới orders/fills/
+   * trades/trade_outcomes/portfolio_snapshot/metrics_daily/lessons — đó là
+   * lịch sử đã giao dịch thật, giữ nguyên để còn xem lại/học từ đó.
+   */
+  async function resetAgent(agentId) {
+    const id = assertAgentScope(agentId, 'resetAgent');
+    return client.withTransaction(async (tx) => {
+      const agentRows = await tx.query(
+        `SELECT initial_capital FROM agents WHERE id = $1`, [id]);
+      if (!agentRows.rows[0]) throw new Error(`resetAgent: không tìm thấy agent ${id}`);
+      const initialCapital = agentRows.rows[0].initial_capital;
+
+      const posRows = await tx.query(
+        `SELECT id FROM positions WHERE agent_id = $1 AND closed_at IS NULL`, [id]);
+      const positionIds = posRows.rows.map(r => r.id);
+
+      if (positionIds.length > 0) {
+        await tx.query(`DELETE FROM position_lots WHERE position_id = ANY($1)`, [positionIds]);
+        await tx.query(`DELETE FROM positions WHERE id = ANY($1)`, [positionIds]);
+      }
+
+      await tx.query(`UPDATE agents SET cash_vnd = $2 WHERE id = $1`, [id, initialCapital]);
+
+      // Dashboard đọc tiền/NAV từ portfolio_snapshot (dòng mới nhất), không
+      // đọc agents.cash_vnd. Nếu không ghi lại snapshot hôm nay thì bảng xếp
+      // hạng vẫn hiện tiền cũ cho tới phiên sau. Ghi đè snapshot hôm nay bằng
+      // trạng thái "vừa reset" (NAV = vốn ban đầu); lịch sử các ngày trước giữ nguyên.
+      await tx.query(
+        `INSERT INTO portfolio_snapshot (agent_id, snap_date, cash, market_value, nav, day_pnl)
+         VALUES ($1, (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date, $2, 0, $2, 0)
+         ON CONFLICT (agent_id, snap_date) DO UPDATE SET
+           cash = EXCLUDED.cash, market_value = 0, nav = EXCLUDED.nav, day_pnl = 0`,
+        [id, initialCapital]);
+
+      return { clearedPositions: positionIds.length, cashVnd: num(initialCapital) };
+    });
+  }
+
   async function insertTrade(agentId, t) {
     const id = assertAgentScope(agentId, 'insertTrade');
     const { rows } = await client.query(
@@ -176,6 +218,6 @@ export function createTradingRepo(client) {
     insertOutcome, listOutcomeExitIds, listOutcomes,
     insertOrder, rejectOrder, fillOrder, listOpenOrders,
     getOpenPositions, getPosition, upsertPosition, addLot, listLots, consumeLots,
-    closePosition, insertTrade, listTrades,
+    closePosition, insertTrade, listTrades, resetAgent,
   };
 }

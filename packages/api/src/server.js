@@ -50,6 +50,7 @@ export function createServer({ config, logger = console }) {
   router.get('/api/config/catalog', routes.modelCatalog);
   router.get('/api/agents/:id/config', routes.agentConfig);
   router.patch('/api/agents/:id/config', routes.updateAgentConfig);
+  router.post('/api/agents/:id/reset', routes.resetAgent);
 
   // NOTIFY chỉ mang phong bì gọn; đọc bản đầy đủ từ event_log theo id.
   const listener = createEventListener({
@@ -65,13 +66,16 @@ export function createServer({ config, logger = console }) {
     try {
       const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
 
-      // API chỉ đọc, TRỪ đúng một cổng ghi: sửa provider/model của agent
-      // trong config/agents.json (routes.updateAgentConfig). Mọi phương thức
-      // khác GET ngoài route đó đều bị từ chối thẳng.
+      // API chỉ đọc, TRỪ đúng hai cổng ghi: sửa provider/model của agent
+      // trong config/agents.json (updateAgentConfig), và reset agent (xóa vị
+      // thế + nạp lại vốn ban đầu — qua tiến trình con riêng có quyền ghi,
+      // xem resetAgent trong routes.js, client của route này vẫn chỉ đọc).
+      // Mọi phương thức khác GET ngoài hai route đó đều bị từ chối thẳng.
       const isConfigPatch = req.method === 'PATCH' && /^\/api\/agents\/[^/]+\/config$/.test(url.pathname);
-      if (req.method !== 'GET' && !isConfigPatch) {
+      const isResetPost = req.method === 'POST' && /^\/api\/agents\/[^/]+\/reset$/.test(url.pathname);
+      if (req.method !== 'GET' && !isConfigPatch && !isResetPost) {
         res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8' });
-        return res.end('API này chỉ đọc, trừ sửa provider/model agent — method không hỗ trợ');
+        return res.end('API này chỉ đọc, trừ sửa provider/model agent và reset agent — method không hỗ trợ');
       }
 
       if (config.token) {

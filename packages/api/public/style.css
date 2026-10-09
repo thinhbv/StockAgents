@@ -245,6 +245,8 @@ body {
   cursor: pointer;
 }
 .config-edit-btn:hover, .config-form button:hover { border-color: var(--muted); }
+.reset-btn { color: var(--giam); margin-left: 8px; }
+.reset-btn:hover { border-color: var(--giam); background: rgba(234,57,67,.08); }
 .config-form {
   display: flex;
   flex-wrap: wrap;

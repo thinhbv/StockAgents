@@ -360,3 +360,48 @@ test('PATCH /api/agents/:id/risk agent không tồn tại trả 404', async () =
     params: { id: 'khong-co' }, body: { maxPositionPctNav: 10 },
   }), /404/);
 });
+
+/* ---------- POST /api/agents/:id/reset ---------- */
+
+// runScriptImpl được tiêm vào thay vì gọi cli_reset.js thật qua spawn — route
+// này chỉ có nhiệm vụ kiểm tra agent tồn tại rồi giao việc GHI DB thật cho
+// tiến trình con (client của route vẫn chỉ đọc, xem comment trong routes.js).
+test('POST /api/agents/:id/reset trả 404 khi agent không tồn tại — KHÔNG gọi script', async () => {
+  let called = false;
+  const r = createRoutes({
+    client, repos, agentsConfigPath, modelCatalogPath,
+    runScriptImpl: async () => { called = true; return '{}'; },
+  });
+  await assert.rejects(() => r.resetAgent({ params: { id: 'khong-co' } }), /404/);
+  assert.equal(called, false, 'agent không tồn tại thì không được spawn tiến trình con');
+});
+
+test('POST /api/agents/:id/reset trả đúng kết quả JSON từ script con', async () => {
+  const r = createRoutes({
+    client, repos, agentsConfigPath, modelCatalogPath,
+    runScriptImpl: async (script, args) => {
+      assert.equal(script, 'agent:reset');
+      assert.deepEqual(args, ['--agent', 'a1']);
+      return '> stockagents@0.1.0 agent:reset\n> node packages/agent-runtime/src/cli_reset.js --agent a1\n\n'
+        + '{"agentId":"a1","clearedPositions":3,"cashVnd":1000000000}\n';
+    },
+  });
+  const result = await r.resetAgent({ params: { id: 'a1' } });
+  assert.deepEqual(result, { agentId: 'a1', clearedPositions: 3, cashVnd: 1_000_000_000 });
+});
+
+test('POST /api/agents/:id/reset báo 500 kèm lý do khi script con thất bại', async () => {
+  const r = createRoutes({
+    client, repos, agentsConfigPath, modelCatalogPath,
+    runScriptImpl: async () => { throw new Error('resetAgent: không tìm thấy agent a1'); },
+  });
+  await assert.rejects(() => r.resetAgent({ params: { id: 'a1' } }), /500.*không tìm thấy agent/);
+});
+
+test('POST /api/agents/:id/reset báo 500 khi script con không trả JSON hợp lệ', async () => {
+  const r = createRoutes({
+    client, repos, agentsConfigPath, modelCatalogPath,
+    runScriptImpl: async () => 'không có json nào ở đây\n',
+  });
+  await assert.rejects(() => r.resetAgent({ params: { id: 'a1' } }), /500/);
+});

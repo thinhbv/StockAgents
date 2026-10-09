@@ -1,8 +1,33 @@
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 import { priceBand, parseSymbol } from '@stockagents/agent-runtime/src/sim/vn_rules.js';
 
 const MAX_LIMIT = 500;
+const PROJECT_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+
+/**
+ * Chạy một npm script trong tiến trình con, CHỜ XONG và trả lại stdout —
+ * khác spawnTask() của data-service (chỉ inherit stdio để log, không đọc
+ * lại kết quả). Dùng cho các hành động cần quyền ghi DB mà api server cố
+ * tình không có (xem comment ở resetAgent bên dưới).
+ */
+function runScript(script, args = []) {
+  return new Promise((resolve, reject) => {
+    const shell = process.platform === 'win32'
+      ? (process.env.ComSpec || process.env.COMSPEC || 'C:\\Windows\\System32\\cmd.exe')
+      : true;
+    let stdout = '', stderr = '';
+    const child = spawn('npm', ['run', script, '--', ...args], { cwd: PROJECT_ROOT, shell });
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code !== 0) return reject(new Error(stderr.trim() || stdout.trim() || `thoát mã ${code}`));
+      resolve(stdout);
+    });
+  });
+}
 
 const DEFAULT_AGENTS_CONFIG_PATH =
   fileURLToPath(new URL('../../../config/agents.json', import.meta.url));
@@ -23,6 +48,7 @@ export function createRoutes({
   client, repos,
   agentsConfigPath = DEFAULT_AGENTS_CONFIG_PATH,
   modelCatalogPath = DEFAULT_MODEL_CATALOG_PATH,
+  runScriptImpl = runScript,
 }) {
 
   async function session({ query = {} }) {
@@ -342,8 +368,31 @@ export function createRoutes({
     return { id: params.id, riskConfig: nextRisk, appliesFrom: 'phiên chạy tiếp theo' };
   }
 
+  /**
+   * Reset một agent: xóa vị thế đang giữ, nạp lại vốn ban đầu. KHÔNG đụng
+   * tới lịch sử đã giao dịch. `client` ở route này là kết nối CHỈ ĐỌC
+   * (readonly_role.sql) nên không tự thực hiện được — spawn script riêng
+   * (packages/agent-runtime/src/cli_reset.js) chạy bằng DATABASE_URL có
+   * quyền ghi, cùng khuôn với cách data-service spawn watch:tick.
+   */
+  async function resetAgent({ params }) {
+    const a = await repos.agents.get(params.id);
+    if (!a) throw new HttpError(404, `không có agent '${params.id}'`);
+
+    let stdout;
+    try {
+      stdout = await runScriptImpl('agent:reset', ['--agent', params.id]);
+    } catch (err) {
+      throw new HttpError(500, `reset thất bại: ${err.message}`);
+    }
+
+    const jsonLine = stdout.trim().split('\n').findLast(line => line.trim().startsWith('{'));
+    if (!jsonLine) throw new HttpError(500, `reset không trả kết quả hợp lệ: ${stdout.trim()}`);
+    return JSON.parse(jsonLine);
+  }
+
   return {
     session, leaderboard, agent, positions, decisions, lessons, events, history,
-    modelCatalog, agentConfig, updateAgentConfig, updateAgentRisk, quotes, llmUsage,
+    modelCatalog, agentConfig, updateAgentConfig, updateAgentRisk, quotes, llmUsage, resetAgent,
   };
 }

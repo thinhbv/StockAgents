@@ -16,6 +16,7 @@
     "poll:intraday-flow": "node packages/data-service/src/cli.js poll-intraday-flow",
     "sim:session": "node packages/agent-runtime/src/cli.js",
     "sim:day": "node packages/agent-runtime/src/cli_day.js",
+    "agent:reset": "node packages/agent-runtime/src/cli_reset.js",
     "sim:all": "node packages/agent-runtime/src/cli_all.js",
     "watch:tick": "node packages/agent-runtime/src/cli_watch.js --mode tick",
     "watch:close": "node packages/agent-runtime/src/cli_watch.js --mode close",

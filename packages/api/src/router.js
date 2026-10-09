@@ -10,6 +10,7 @@ export function createRouter() {
 
   const get = register('GET');
   const patch = register('PATCH');
+  const post = register('POST');
 
   function resolve(pathname, method = 'GET') {
     const segs = pathname.split('/').filter(Boolean);
@@ -33,7 +34,7 @@ export function createRouter() {
     return null;
   }
 
-  return { get, patch, resolve };
+  return { get, patch, post, resolve };
 }
 
 function countParams(parts) {

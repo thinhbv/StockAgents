@@ -67,6 +67,13 @@ async function patchJson(path, payload) {
   return body;
 }
 
+async function postJson(path) {
+  const res = await fetch(path, { method: 'POST' });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `${path}: HTTP ${res.status}`);
+  return body;
+}
+
 /* ---------- Đầu bảng ---------- */
 
 function setTag(el, text, kind) {
@@ -455,6 +462,32 @@ async function submitConfigForm(e) {
   }
 }
 
+/**
+ * Reset agent đang chọn: xóa vị thế đang giữ, nạp lại vốn ban đầu. KHÔNG
+ * xóa lịch sử đã giao dịch (trades/orders/lessons/NAV theo ngày...) — xem
+ * routes.js::resetAgent. Xác nhận bằng confirm() vì đây là thao tác không
+ * hoàn tác được từ phía người dùng.
+ */
+async function resetSelectedAgent() {
+  const agent = state.detailAgent;
+  if (!agent) return;
+  const ok = confirm(
+    `Reset "${agent.name}"?\n\nSẽ xóa TOÀN BỘ vị thế đang giữ và nạp lại vốn về 1.000.000.000đ.\n` +
+    `Lịch sử đã giao dịch vẫn được giữ nguyên. Không thể hoàn tác.`);
+  if (!ok) return;
+
+  $('reset-status').textContent = 'Đang reset...';
+  try {
+    const r = await postJson(`/api/agents/${encodeURIComponent(agent.id)}/reset`);
+    $('reset-status').textContent =
+      `Đã xóa ${r.clearedPositions} vị thế, nạp lại ${vnd(r.cashVnd)}đ.`;
+    await refreshBoard();
+    await refreshDetail(agent.id);
+  } catch (err) {
+    $('reset-status').textContent = `Lỗi: ${err.message}`;
+  }
+}
+
 /* ---------- Dòng sự kiện ---------- */
 
 const TYPE_STYLE = {
@@ -554,6 +587,7 @@ async function start() {
   $('config-cancel-btn').addEventListener('click', closeConfigForm);
   $('config-form').addEventListener('submit', submitConfigForm);
   $('config-provider').addEventListener('change', fillModelOptions);
+  $('reset-agent-btn').addEventListener('click', () => resetSelectedAgent().catch(() => {}));
 
   await refreshSession().catch(() => {});
   await refreshBoard().catch(() => {});
