@@ -143,10 +143,24 @@ test('HOLD không tạo lệnh nào', async () => {
   assert.equal(rows[0].n, 0, 'HOLD không được ghi lệnh');
 });
 
-test('chặn giao dịch khi lỗ ngày vượt ngưỡng', async () => {
+test('chặn MUA khi lỗ ngày vượt ngưỡng', async () => {
   const r = await engine.submit('a1', buy(), ctx({ dayPnl: -60_000_000 }));
   assert.equal(r.status, 'REJECTED');
   assert.match(r.reason, /lỗ trong ngày/);
+});
+
+// Bug thật đã gặp (gemini_news 2026-10-05): lỗ ngày vượt ngưỡng chặn luôn
+// lệnh BÁN cắt lỗ — đúng lúc cần thoát vị thế nhất lại bị khoá, lỗ càng
+// tăng vì không bán được. checkDailyLoss chỉ được áp cho BUY (guardrails.js
+// đã ghi rõ ý định này), SELL không bao giờ bị chặn vì lý do lỗ ngày.
+test('KHÔNG chặn BÁN khi lỗ ngày vượt ngưỡng — cắt lỗ phải luôn thực hiện được', async () => {
+  await applyBuy({ repos, agentId: 'a1', symbol: 'HOSE:FPT', qty: 1000, priceVnd: 100_000, cost: 100_150_000, tradeDate: '2026-07-20' });
+  await refreshSellable({ repos, agentId: 'a1', today: '2026-07-23' });
+
+  const r = await engine.submit('a1',
+    { action: 'SELL', symbol: 'HOSE:FPT', quantity: 1000, orderType: 'MARKET', limitPriceVnd: null, reason: 'cắt lỗ', confidence: 0.5 },
+    ctx({ tradeDate: '2026-07-23', dayPnl: -60_000_000 }));
+  assert.equal(r.status, 'FILLED', `lệnh bán cắt lỗ không được bị chặn, nhận: ${r.reason ?? r.status}`);
 });
 
 test('mọi lệnh khớp đều ghi trades kèm reasoning', async () => {

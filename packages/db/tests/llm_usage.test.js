@@ -118,3 +118,42 @@ test('recent lọc theo agentId khi truyền vào', async () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].agentId, 'a1');
 });
+
+/* ---------- lọc theo ngày ---------- */
+
+test('totalsByAgent với date chỉ gộp bản ghi ĐÚNG ngày VN đó, bỏ qua sinceHours', async () => {
+  // 2026-01-14 23:00 UTC = 2026-01-15 06:00 giờ VN — thuộc ngày 15, không
+  // phải 14, nếu lọc theo UTC thay vì giờ VN sẽ ra sai ngày.
+  await client.query(
+    `INSERT INTO llm_usage (agent_id, provider, model, purpose, input_tokens, created_at) VALUES
+       ('a1', 'anthropic', 'm', 'decision', 100, '2026-01-14 23:00:00+00'),
+       ('a1', 'anthropic', 'm', 'decision', 200, '2026-01-15 10:00:00+00'),
+       ('a1', 'anthropic', 'm', 'decision', 300, '2026-01-15 23:30:00+00')`);
+  // Dòng cuối: 2026-01-15 23:30 UTC = 2026-01-16 06:30 giờ VN — thuộc ngày 16.
+
+  const totals = await llmUsage.totalsByAgent({ date: '2026-01-15', sinceHours: 1 });
+  const a1 = totals.find(t => t.agentId === 'a1');
+  assert.equal(a1.requests, 2, 'chỉ 2 bản ghi rơi vào giờ VN ngày 15');
+  assert.equal(a1.inputTokens, 100 + 200);
+});
+
+test('recent với date chỉ trả bản ghi đúng ngày, không bị giới hạn bởi sinceHours mặc định', async () => {
+  await client.query(
+    `INSERT INTO llm_usage (agent_id, provider, model, purpose, input_tokens, created_at) VALUES
+       ('a1', 'anthropic', 'm', 'decision', 1, now() - interval '30 days'),
+       ('a1', 'anthropic', 'm', 'decision', 2, now() - interval '30 days' + interval '1 hour')`);
+  const theDate = await client.query(
+    `SELECT to_char((now() - interval '30 days') AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD') AS d`);
+  const date = theDate.rows[0].d;
+
+  const rows = await llmUsage.recent({ date });
+  assert.equal(rows.length, 2, 'bản ghi 30 ngày trước vẫn phải thấy được khi lọc đúng ngày đó');
+});
+
+test('không truyền date thì recent/totalsByAgent giữ hành vi cũ (không rơi vào nhánh lọc ngày)', async () => {
+  await llmUsage.insertUsage({ agentId: 'a1', provider: 'anthropic', model: 'm', purpose: 'decision', inputTokens: 5 });
+  const totals = await llmUsage.totalsByAgent();
+  const rows = await llmUsage.recent();
+  assert.equal(totals.find(t => t.agentId === 'a1').inputTokens, 5);
+  assert.equal(rows.length, 1);
+});

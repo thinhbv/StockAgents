@@ -41,13 +41,21 @@ export function createRoutes({
    * N bản ghi gần nhất để xem chi tiết từng lượt gọi trên dashboard.
    */
   async function llmUsage({ query = {} }) {
+    // date ("YYYY-MM-DD") LẤN ÁT sinceHours khi có cả hai — xem comment ở
+    // llm_usage.js. Validate format ở đây, không đẩy chuỗi tuỳ ý xuống SQL.
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(query.date ?? '') ? query.date : null;
     const sinceHours = intParam(query.sinceHours, 24 * 7, 24 * 90);
     const limit = intParam(query.limit, 100, MAX_LIMIT);
-    const [totals, recent] = await Promise.all([
-      repos.llmUsage.totalsByAgent({ sinceHours }),
-      repos.llmUsage.recent({ limit }),
+    const [totals, recent, names] = await Promise.all([
+      repos.llmUsage.totalsByAgent({ sinceHours, date }),
+      repos.llmUsage.recent({ limit, date }),
+      repos.agents.listNames(),
     ]);
-    return { sinceHours, totals, recent };
+    // Tên hiển thị ("Nhà đầu tư số 1") thay vì id thô ("claude_value") —
+    // listNames() phủ cả agent đang tạm dừng nên không rơi về id ngay cả
+    // với thống kê cũ của agent đã pause.
+    const withName = (r) => ({ ...r, agentName: names.get(r.agentId) ?? r.agentId });
+    return { sinceHours, date, totals: totals.map(withName), recent: recent.map(withName) };
   }
 
   /** Bảng giá 30 mã trong universe agent đang theo dõi — dùng cho tab thị trường. */

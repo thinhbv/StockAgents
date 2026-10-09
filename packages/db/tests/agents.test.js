@@ -50,6 +50,16 @@ test('upsertMany lại với active thay đổi thì cập nhật — bật/tắ
   assert.equal((await agents.get('a1')).active, true, 'mở lại được, không cần tạo agent mới');
 });
 
+test('listNames trả về id -> tên cho MỌI agent, kể cả đang tạm dừng', async () => {
+  await agents.upsertMany([
+    def({ id: 'a1', name: 'Nhà đầu tư số 1' }),
+    def({ id: 'a2', name: 'Nhà đầu tư số 2', active: false }),
+  ]);
+  const names = await agents.listNames();
+  assert.equal(names.get('a1'), 'Nhà đầu tư số 1');
+  assert.equal(names.get('a2'), 'Nhà đầu tư số 2', 'agent tạm dừng vẫn phải tra được tên');
+});
+
 test('agent tạm dừng (active=false) vẫn giữ nguyên tiền mặt/vị thế đã có, không bị reset', async () => {
   await agents.upsertMany([def()]);
   await agents.setCash('a1', 500_000_000);

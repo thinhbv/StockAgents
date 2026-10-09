@@ -96,9 +96,6 @@ export function createEngine({ repos, logger = console, slippagePct = SLIPPAGE_P
       limitPriceVnd: decision.limitPriceVnd ?? null,
     });
 
-    const loss = checkDailyLoss({ dayPnl: ctx.dayPnl, nav: ctx.nav, risk });
-    if (!loss.ok) return reject(agentId, orderId, loss.reason);
-
     const band = priceBand(refPrice, exchange);
     const limit = decision.limitPriceVnd;
     if (decision.orderType === 'LIMIT') {
@@ -112,6 +109,17 @@ export function createEngine({ repos, logger = console, slippagePct = SLIPPAGE_P
     const portfolio = await loadPortfolio({ repos, agentId, priceMap: ctx.tickPriceMap });
 
     if (side === 'BUY') {
+      // checkDailyLoss CHỈ chặn MUA — mở thêm rủi ro khi đã lỗ nặng trong
+      // ngày. Áp dụng cho cả SELL (như trước đây) là một bug: nó khoá luôn
+      // đường thoát đúng lúc agent cần cắt lỗ nhất, biến guardrail bảo vệ
+      // vốn thành cái nhốt agent trong vị thế thua lỗ — đã thấy thật
+      // (gemini_news 2026-10-05: 7 lệnh SELL cắt lỗ FPT/VRE liên tiếp bị từ
+      // chối vì "lỗ trong ngày vượt ngưỡng", lỗ chỉ tăng thêm vì không thoát
+      // được). checkSell() không có khái niệm giới hạn lỗ ngày, đúng ý định
+      // ban đầu đã ghi trong guardrails.js.
+      const loss = checkDailyLoss({ dayPnl: ctx.dayPnl, nav: ctx.nav, risk });
+      if (!loss.ok) return reject(agentId, orderId, loss.reason);
+
       const execPrice = decision.orderType === 'LIMIT' ? limit : slip(tickPrice, 'BUY');
       const cost = buyCost({ priceVnd: execPrice, qty }).total;
       const g = checkBuy({

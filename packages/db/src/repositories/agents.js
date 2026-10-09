@@ -53,6 +53,16 @@ export function createAgentsRepo(client) {
     return rows.map(r => r.id);
   }
 
+  /**
+   * id -> tên hiển thị cho MỌI agent, kể cả đang tạm dừng (active=false) —
+   * thống kê token lịch sử của một agent đã tạm dừng vẫn phải đọc được tên,
+   * không rơi về id thô.
+   */
+  async function listNames() {
+    const { rows } = await client.query(`SELECT id, name FROM agents ORDER BY id`);
+    return new Map(rows.map(r => [r.id, r.name]));
+  }
+
   // Tiền mặt là TRẠNG THÁI hiện tại, nằm trên agents — KHÔNG lấy từ snapshot.
   // Đọc/ghi qua snapshot sẽ làm hỏng chính mốc so sánh PnL ngày.
   async function getCash(agentId) {
@@ -160,7 +170,7 @@ export function createAgentsRepo(client) {
   }
 
   return {
-    upsertMany, get, listActive, getCash, setCash,
+    upsertMany, get, listActive, listNames, getCash, setCash,
     saveSnapshot, getSnapshot, getPreviousSnapshot,
     listNavSeries, saveMetrics, getMetrics,
   };

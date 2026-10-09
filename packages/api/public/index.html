@@ -133,7 +133,13 @@
 </main>
 
 <section id="tab-usage" class="tab-panel board" role="tabpanel" aria-labelledby="tab-btn-usage" hidden>
-  <h2 class="eyebrow">Token LLM theo agent — 7 ngày gần nhất</h2>
+  <div class="usage-filter">
+    <label>Ngày
+      <input type="date" id="usage-date">
+    </label>
+    <button type="button" id="usage-date-clear">Xem 7 ngày gần nhất</button>
+  </div>
+  <h2 class="eyebrow" id="usage-totals-title">Token LLM theo agent — 7 ngày gần nhất</h2>
   <table class="price-board" id="usage-totals-table">
     <thead>
       <tr>
@@ -250,18 +256,32 @@
   const USAGE_REFRESH_MS = 20000;
   const intFmt = (n) => n === null || n === undefined ? '—' : Math.round(n).toLocaleString('vi-VN');
 
+  const usageDateInput = document.getElementById('usage-date');
+  const usageDateClearBtn = document.getElementById('usage-date-clear');
+  usageDateInput.addEventListener('change', () => refreshUsage());
+  usageDateClearBtn.addEventListener('click', () => {
+    usageDateInput.value = '';
+    refreshUsage();
+  });
+
   async function refreshUsage() {
     const totalsBody = document.getElementById('usage-totals-body');
     const recentBody = document.getElementById('usage-recent-body');
+    const titleEl = document.getElementById('usage-totals-title');
+    const date = usageDateInput.value; // '' khi không lọc — input[type=date] rỗng không phải chuỗi "undefined"
     try {
-      const res = await fetch('/api/llm-usage');
+      const url = date ? `/api/llm-usage?date=${encodeURIComponent(date)}` : '/api/llm-usage';
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const { totals, recent } = await res.json();
+      titleEl.textContent = date
+        ? `Token LLM theo agent — ngày ${date.split('-').reverse().join('/')}`
+        : 'Token LLM theo agent — 7 ngày gần nhất';
 
       totalsBody.innerHTML = totals.length === 0
         ? '<tr class="empty"><td colspan="7">Chưa có lượt gọi nào.</td></tr>'
         : totals.map((t) => `<tr>
-            <td>${t.agentId}</td>
+            <td>${t.agentName}</td>
             <td class="num">${intFmt(t.requests)}</td>
             <td class="num ${t.failedRequests > 0 ? 'down' : ''}">${intFmt(t.failedRequests)}</td>
             <td class="num">${intFmt(t.inputTokens)}</td>
@@ -274,7 +294,7 @@
         ? '<tr class="empty"><td colspan="8">Chưa có lượt gọi nào.</td></tr>'
         : recent.map((r) => `<tr>
             <td>${timeFmt(r.createdAt)}</td>
-            <td>${r.agentId}</td>
+            <td>${r.agentName}</td>
             <td>${r.provider} / ${r.model}</td>
             <td>${r.purpose === 'decision' ? 'quyết định' : 'rút kinh nghiệm'}</td>
             <td class="num">${intFmt(r.inputTokens)}</td>
