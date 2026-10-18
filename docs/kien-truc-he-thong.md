@@ -219,6 +219,7 @@ xem [config.js](../packages/api/src/config.js) và migration 008.
 | Đường dẫn | Vai trò |
 |---|---|
 | `config/agents.json` | Định nghĩa 5 agent — tên, model, `personaPrompt`, vốn, `riskConfig` |
+| `config/persona.md` | Tính cách chung của 5 agent — `personaPrompt` trong `agents.json` trỏ tới file này |
 | `config/universe.json` | 30 mã VN30 theo dõi |
 | `config/model-catalog.json` | Danh sách model khả dụng mỗi provider — dashboard đọc để hiện dropdown đổi model |
 | `ecosystem.config.cjs` | Cấu hình PM2 chạy `data-service` nền bền |

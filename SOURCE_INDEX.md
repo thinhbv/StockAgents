@@ -302,7 +302,7 @@ Mô phỏng giao dịch: dựng context cho LLM, gọi LLM, khớp lệnh theo l
 ### `packages/agent-runtime/src/agents/registry.js`
 Nạp và validate danh sách định nghĩa agent từ `config/agents.json` — nguồn sự thật duy nhất cho 5 agent.
 
-- `loadAgentDefs(path)` — đọc file JSON, ép kiểu mảng không rỗng, bắt buộc mỗi agent có đủ `id`/`name`/`provider`/`model`/`personaPrompt`/`initialCapital` — thiếu trường nào báo lỗi ngay lúc nạp.
+- `loadAgentDefs(path)` — đọc file JSON, ép kiểu mảng không rỗng, bắt buộc mỗi agent có đủ `id`/`name`/`provider`/`model`/`personaPrompt`/`initialCapital` — thiếu trường nào báo lỗi ngay lúc nạp. `personaPrompt` kết thúc bằng `.md` được đọc từ file (đường dẫn tương đối với thư mục chứa `agents.json`), mỗi lần nạp; file trống hoặc không có thì báo lỗi kèm id agent.
 
 ### `packages/agent-runtime/src/agents/context.js`
 Dựng gói context (JSON) gửi cho LLM trước mỗi lượt ra quyết định — TOÀN BỘ những gì agent "nhìn thấy".

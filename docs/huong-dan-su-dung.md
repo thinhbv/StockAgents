@@ -437,7 +437,11 @@ mã phải xếp hàng lần lượt.
 
 Sửa [config/agents.json](../config/agents.json). Mỗi agent có:
 
-- `personaPrompt` — mô tả phong cách, đi thẳng vào prompt hệ thống
+- `personaPrompt` — đường dẫn file `.md` chứa tính cách, đi thẳng vào prompt hệ
+  thống. Hiện cả 5 agent cùng trỏ tới [config/persona.md](../config/persona.md).
+  Sửa file đó là đủ; nội dung được đọc lại mỗi lần chạy, nên có hiệu lực ở lượt
+  kế tiếp. Muốn một agent có tính cách riêng thì tạo file `.md` khác và đổi đường
+  dẫn trong JSON (đường dẫn tính tương đối với thư mục `config/`).
 - `initialCapital` — mặc định 1 tỷ VND
 - `riskConfig` — `maxPositionPctNav`, `dailyLossLimitPct`
 
