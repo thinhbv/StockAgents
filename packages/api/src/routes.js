@@ -133,18 +133,21 @@ export function createRoutes({
          SELECT nav, cash, market_value, day_pnl FROM portfolio_snapshot
          WHERE agent_id = a.id ORDER BY snap_date DESC LIMIT 1
        ) s ON TRUE
-       WHERE a.active
        ORDER BY s.nav DESC NULLS LAST, a.id`);
+
+    // Đang bật = config/agents.json chưa tắt — đúng nguồn mà sim:* và watch:tick
+    // đọc để chọn agent giao dịch. KHÔNG lọc theo cột DB agents.active: cột đó
+    // chỉ đồng bộ khi có lượt chạy, nên bật/tắt trên dashboard sẽ không hiện ngay.
+    const defs = await readFile(agentsConfigPath, 'utf8').then(JSON.parse).catch(() => []);
+    const activeById = new Map(defs.map(d => [d.id, d.active !== false]));
 
     // Bảng đọc DB (provider/model ĐANG CHẠY THẬT), nhưng sửa trên dashboard
     // chỉ ghi vào agents.json — nếu không kèm theo giá trị đang chờ áp dụng,
     // người vừa sửa sẽ thấy bảng "vẫn model cũ" và tưởng thao tác không ăn.
-    const pendingById = new Map(
-      (await readFile(agentsConfigPath, 'utf8').then(JSON.parse).catch(() => []))
-        .map(d => [d.id, { provider: d.provider, model: d.model }]));
+    const pendingById = new Map(defs.map(d => [d.id, { provider: d.provider, model: d.model }]));
 
     return {
-      agents: rows.map(r => {
+      agents: rows.filter(r => activeById.get(r.id) !== false).map(r => {
         const nav = r.nav === null ? null : Number(r.nav);
         const cap = Number(r.initialCapital);
         const pending = pendingById.get(r.id);
@@ -373,6 +376,37 @@ export function createRoutes({
   }
 
   /**
+   * Bật/tắt agent trên dashboard — chỉ đụng `active` trong config/agents.json,
+   * cùng con đường ghi an toàn với updateAgentRisk. Bảng xếp hạng lọc theo file
+   * này nên đổi có hiệu lực ngay; việc giao dịch theo lượt chạy kế tiếp.
+   * Agent tắt không mở lệnh mới và không được theo dõi (cli_watch, cli_all chỉ
+   * xử lý agent đang bật), nên vị thế đang giữ đứng yên cho tới khi bật lại.
+   */
+  async function setAgentActive({ params, body }) {
+    const active = body?.active;
+    if (typeof active !== 'boolean') throw new HttpError(400, 'cần active dạng true hoặc false');
+
+    const defs = JSON.parse(await readFile(agentsConfigPath, 'utf8'));
+    const idx = defs.findIndex(d => d.id === params.id);
+    if (idx === -1) throw new HttpError(404, `không có agent '${params.id}' trong config/agents.json`);
+
+    defs[idx] = { ...defs[idx], active };
+
+    const tmpPath = `${agentsConfigPath}.tmp`;
+    await writeFile(tmpPath, `${JSON.stringify(defs, null, 2)}\n`, 'utf8');
+    await rename(tmpPath, agentsConfigPath);
+
+    return { id: params.id, active };
+  }
+
+  /** Mọi agent trong config/agents.json kèm trạng thái bật/tắt — để bật lại được
+   * agent đã tắt, vì bảng xếp hạng chỉ hiện agent đang bật. */
+  async function roster() {
+    const defs = await readFile(agentsConfigPath, 'utf8').then(JSON.parse).catch(() => []);
+    return { agents: defs.map(d => ({ id: d.id, name: d.name, active: d.active !== false })) };
+  }
+
+  /**
    * Reset một agent: xóa vị thế đang giữ, nạp lại vốn ban đầu. KHÔNG đụng
    * tới lịch sử đã giao dịch. `client` ở route này là kết nối CHỈ ĐỌC
    * (readonly_role.sql) nên không tự thực hiện được — spawn script riêng
@@ -416,6 +450,6 @@ export function createRoutes({
   return {
     session, leaderboard, agent, positions, decisions, lessons, events, history,
     modelCatalog, agentConfig, updateAgentConfig, updateAgentRisk, quotes, llmUsage, resetAgent,
-    refreshQuotes,
+    refreshQuotes, roster, setAgentActive,
   };
 }

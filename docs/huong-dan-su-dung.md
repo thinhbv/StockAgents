@@ -307,6 +307,20 @@ Bảy cột: Agent, Model, NAV, Lãi/lỗ tổng, Lãi/lỗ hôm nay, Tiền m�
 
 Bấm vào một dòng để mở chi tiết agent đó.
 
+### Bật/tắt agent
+
+Khối "Bật/tắt agent" nằm phía trên bảng xếp hạng, mỗi agent một nút. Bấm để tắt
+hoặc bật lại. Bảng xếp hạng chỉ hiện agent đang bật, nên agent đã tắt chỉ bật
+lại được từ khối này.
+
+- **Tắt**: agent không mở lệnh mới và không được theo dõi vị thế đang giữ — lượt
+  `watch:tick` và chốt sổ bỏ qua nó, nên vị thế đứng yên cho tới khi bật lại.
+- **Bật**: giao dịch từ lượt chạy kế tiếp.
+
+Trạng thái lưu trong `config/agents.json` (trường `active`), cùng file với
+provider/model. Bảng xếp hạng đọc từ file này, không đọc cột DB, nên đổi có hiệu
+lực ngay trên màn hình.
+
 ### Màu sắc
 
 Lấy nguyên quy ước bảng giá chứng khoán VN, để bạn không phải học lại:
@@ -511,6 +525,10 @@ tự đánh giá.
 lưu và vẫn quay lại prompt, chỉ là xếp theo độ tin cậy thay vì theo ngữ nghĩa.
 Đó là suy giảm êm, không phải hỏng. Muốn có tìm kiếm ngữ nghĩa thì cần API
 embeddings của OpenAI hoặc Voyage — Anthropic không có.
+
+**Tắt agent không bán vị thế đang giữ.** Vị thế của agent đang tắt không được
+theo dõi cho tới khi bật lại, nên không có cắt lỗ/chốt lời tự động trong thời
+gian đó. Muốn thoát vị thế trước khi tắt thì phải tự làm việc đó.
 
 **So sánh giữa các agent chỉ công bằng khi chúng chạy trên cùng dữ liệu.**
 `sim:all` phát lại đúng một chuỗi tick cho cả năm agent vì lý do đó. Chạy từng

@@ -456,3 +456,44 @@ test('quotes() tự tính trần/sàn từ giá đóng cửa khi tick không có
   assert.equal(q.floor, 18600);
   assert.equal(q.changePct, 2.5);
 });
+
+/* ---------- bật/tắt agent ---------- */
+
+test('setAgentActive ghi active vào config, giữ nguyên field khác và agent khác', async () => {
+  const r = await routes.setAgentActive({ params: { id: 'a2' }, body: { active: false } });
+  assert.deepEqual(r, { id: 'a2', active: false });
+
+  const defs = JSON.parse(await readFile(agentsConfigPath, 'utf8'));
+  const a2 = defs.find(d => d.id === 'a2');
+  assert.equal(a2.active, false);
+  assert.equal(a2.personaPrompt, 'ngược dòng');
+  assert.equal(defs.find(d => d.id === 'a1').active, undefined, 'agent khác không bị đụng tới');
+});
+
+test('setAgentActive báo 404 khi agent không có trong config, 400 khi active không phải boolean', async () => {
+  await assert.rejects(
+    () => routes.setAgentActive({ params: { id: 'khong-co' }, body: { active: false } }), /404/);
+  await assert.rejects(
+    () => routes.setAgentActive({ params: { id: 'a1' }, body: { active: 'no' } }), /400/);
+});
+
+test('leaderboard ẩn agent đã tắt trong config, kể cả khi cột DB vẫn active', async () => {
+  await routes.setAgentActive({ params: { id: 'a2' }, body: { active: false } });
+  const { agents } = await routes.leaderboard();
+  assert.deepEqual(agents.map(a => a.id), ['a1']);
+});
+
+test('leaderboard hiện agent đang bật trong config, kể cả khi cột DB đang inactive', async () => {
+  await client.query(`UPDATE agents SET active = FALSE WHERE id = 'a2'`);
+  const { agents } = await routes.leaderboard();
+  assert.ok(agents.some(a => a.id === 'a2'), 'trạng thái thật nằm ở config, không phải cột DB');
+});
+
+test('roster liệt kê cả agent đang tắt để có thể bật lại', async () => {
+  await routes.setAgentActive({ params: { id: 'a2' }, body: { active: false } });
+  const { agents } = await routes.roster();
+  assert.deepEqual(agents, [
+    { id: 'a1', name: 'Agent Một', active: true },
+    { id: 'a2', name: 'Agent Hai', active: false },
+  ]);
+});

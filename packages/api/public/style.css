@@ -272,6 +272,26 @@ body {
 }
 .config-status { font-size: 12px; color: var(--muted); }
 
+/* ---------- Bật/tắt agent ---------- */
+
+.roster { margin: 0 0 22px; }
+.roster-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.roster-chip {
+  background: var(--board-2);
+  border: 1px solid var(--tang);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  font-family: var(--sans);
+  cursor: pointer;
+}
+.roster-chip:hover { border-color: var(--muted); }
+.roster-chip[aria-pressed="false"] {
+  border: 1px dashed var(--rule);
+  color: var(--muted);
+}
+
 .usage-filter {
   display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
   margin-bottom: 18px;

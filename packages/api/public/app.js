@@ -167,7 +167,47 @@ async function refreshBoard() {
   renderBoard(agents);
   if (state.selected && agents.some(a => a.id === state.selected)) {
     await refreshDetail(state.selected);
+  } else {
+    // Agent đang xem vừa bị tắt, không còn trên bảng xếp hạng: ẩn chi tiết để khỏi hiện số cũ.
+    $('detail').hidden = true;
   }
+}
+
+/* ---------- Bật/tắt agent ---------- */
+
+// Hiện cả agent đang tắt. Bảng xếp hạng chỉ có agent đang bật, nên đây là chỗ duy nhất để bật lại.
+async function refreshRoster() {
+  const { agents } = await getJson('/api/roster');
+  renderRoster(agents);
+}
+
+function renderRoster(agents) {
+  const box = $('roster');
+  box.textContent = '';
+  for (const a of agents) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'roster-chip';
+    btn.setAttribute('aria-pressed', String(a.active));
+    btn.title = a.active ? 'Bấm để tắt' : 'Bấm để bật';
+    btn.textContent = `${a.name} · ${a.active ? 'đang bật' : 'đang tắt'}`;
+    btn.addEventListener('click', () => toggleAgent(a.id, !a.active).catch(() => {}));
+    box.appendChild(btn);
+  }
+}
+
+async function toggleAgent(id, active) {
+  const status = $('roster-status');
+  status.textContent = 'Đang lưu...';
+  try {
+    await patchJson(`/api/agents/${encodeURIComponent(id)}/active`, { active });
+    status.textContent = active
+      ? 'Đã bật — giao dịch từ lượt chạy kế tiếp.'
+      : 'Đã tắt — không mở lệnh mới, và không theo dõi vị thế đang giữ cho tới khi bật lại.';
+  } catch (err) {
+    status.textContent = `Lỗi: ${err.message}`;
+  }
+  await Promise.all([refreshRoster(), refreshBoard()]).catch(() => {});
 }
 
 /* ---------- Chi tiết agent ---------- */
@@ -591,6 +631,7 @@ async function start() {
 
   await refreshSession().catch(() => {});
   await refreshBoard().catch(() => {});
+  await refreshRoster().catch(() => {});
 
   // LỊCH SỬ TRƯỚC, rồi mới mở luồng từ con trỏ — không để hở khoảng nào.
   try {

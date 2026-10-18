@@ -552,7 +552,7 @@ Toàn bộ logic nghiệp vụ của dashboard API — mỗi hàm ứng một en
 - `HttpError` — lỗi HTTP có `status`.
 - `createRoutes({ client, repos, agentsConfigPath, modelCatalogPath })` → object handler:
   - `session({ query })` — trạng thái dữ liệu một ngày; không có dữ liệu trả thẳng `'UNKNOWN'` (trả `DATA_READY` giả cho ngày chưa ingest là đúng loại nói dối cả hệ thống tránh).
-  - `leaderboard()` — bảng xếp hạng, JOIN LATERAL snapshot mới nhất mỗi agent; cờ `isPending` khi `config/agents.json` khác DB đang chạy thật.
+  - `leaderboard()` — bảng xếp hạng, JOIN LATERAL snapshot mới nhất mỗi agent; chỉ hiện agent đang bật theo `config/agents.json` (KHÔNG theo cột DB `agents.active`, vì cột đó chỉ đồng bộ khi có lượt chạy); cờ `isPending` khi `config/agents.json` khác DB đang chạy thật.
   - `agent` / `positions` / `decisions` / `lessons` ({ params }) — chi tiết một agent.
   - `history({ params, query })` — chuỗi NAV theo ngày (bỏ mốc 1970) kèm `metrics_daily` mới nhất (gồm `confidenceCalibration`).
   - `events({ query })` — sự kiện theo `since`/`limit`.
@@ -560,6 +560,8 @@ Toàn bộ logic nghiệp vụ của dashboard API — mỗi hàm ứng một en
   - `agentConfig({ params })` — provider/model ĐANG CHỜ ÁP DỤNG (file) bên cạnh ĐANG CHẠY THẬT (DB) — hai nguồn cố ý lệch để form tô đúng lần sửa gần nhất.
   - `updateAgentConfig({ params, body })` — sửa provider/model, CHỈ ghi `config/agents.json` (không đụng DB); validate qua model catalog; ghi file tạm rồi `rename` đè.
   - `updateAgentRisk({ params, body })` — sửa `maxPositionPctNav`/`dailyLossLimitPct` trong `riskConfig`, cùng con đường ghi an toàn (chỉ `config/agents.json`); chỉ ghi đè field THỰC SỰ được truyền, không xoá field còn lại; validate khoảng (0, 100]. Dùng cho agent điều phối qua Telegram.
+  - `setAgentActive({ params, body })` — bật/tắt agent: CHỈ ghi trường `active` trong `config/agents.json` (cùng cách ghi file tạm rồi `rename`); 400 nếu `active` không phải boolean, 404 nếu agent không có trong file. Agent tắt bị `cli_watch`/`cli_all` bỏ qua.
+  - `roster()` — mọi agent trong `config/agents.json` kèm `active`, để bật lại được agent đã tắt (bảng xếp hạng không hiện agent tắt).
 
 ### `packages/api/src/coordinator.js`
 "Bộ não" của agent điều phối qua Telegram — chỉ đọc dữ liệu thật, mọi thay đổi đi qua đúng con đường ghi đã có (`config/agents.json`), không tự đặt lệnh mua/bán, không sửa persona.
