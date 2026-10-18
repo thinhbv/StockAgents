@@ -6,14 +6,14 @@ import { join } from 'node:path';
 import { withTestDb, resetTables } from '../../../tests/helpers/db.js';
 import {
   createAgentsRepo, createTradingRepo, createOpsRepo, createEventsRepo, createLessonsRepo,
-  createMarketRepo,
+  createMarketRepo, createUniverseRepo,
 } from '@stockagents/db';
 import { createRoutes } from '../src/routes.js';
 
 let client, repos, routes, tmpDir, agentsConfigPath, modelCatalogPath;
 const TABLES = ['lesson_usage', 'lessons', 'trigger_log', 'position_lots', 'fills', 'orders', 'trade_outcomes',
   'trades', 'positions', 'portfolio_snapshot', 'metrics_daily', 'event_log',
-  'session_state', 'agents', 'universe'];
+  'session_state', 'agents', 'universe', 'quote_tick', 'ohlcv_daily'];
 
 const FIXTURE_DEFS = [
   { id: 'a1', name: 'Agent Một', provider: 'stub', model: 'stub',
@@ -29,6 +29,7 @@ before(async () => {
     agents: createAgentsRepo(client), trading: createTradingRepo(client),
     ops: createOpsRepo(client), events: createEventsRepo(client),
     lessons: createLessonsRepo(client), market: createMarketRepo(client),
+    universe: createUniverseRepo(client),
   };
   tmpDir = await mkdtemp(join(tmpdir(), 'routes-test-'));
   agentsConfigPath = join(tmpDir, 'agents.json');
@@ -404,4 +405,54 @@ test('POST /api/agents/:id/reset báo 500 khi script con không trả JSON hợp
     runScriptImpl: async () => 'không có json nào ở đây\n',
   });
   await assert.rejects(() => r.resetAgent({ params: { id: 'a1' } }), /500/);
+});
+
+/* ---------- POST /api/quotes/refresh ---------- */
+
+test('POST /api/quotes/refresh trả kết quả JSON từ script poll:quotes:now', async () => {
+  const r = createRoutes({
+    client, repos, agentsConfigPath, modelCatalogPath,
+    runScriptImpl: async (script) => {
+      assert.equal(script, 'poll:quotes:now');
+      return '> stockagents@0.1.0 poll:quotes:now\n\n{"inserted":30,"failed":0}\n';
+    },
+  });
+  assert.deepEqual(await r.refreshQuotes(), { inserted: 30, failed: 0 });
+});
+
+test('POST /api/quotes/refresh báo 500 kèm lý do khi script con thất bại', async () => {
+  const r = createRoutes({
+    client, repos, agentsConfigPath, modelCatalogPath,
+    runScriptImpl: async () => { throw new Error('collectVciQuotes: HTTP 503'); },
+  });
+  await assert.rejects(() => r.refreshQuotes(), /500.*HTTP 503/);
+});
+
+/* ---------- quotes (GET /api/quotes) ---------- */
+
+// Giá đóng cửa 20.000 → HOSE ±7%, bước giá 50: trần 21.400, sàn 18.600.
+test('quotes() dùng trần/sàn/tham chiếu VCI đã lưu cùng tick, không tự tính từ giá đóng cửa', async () => {
+  await client.query(`INSERT INTO ohlcv_daily (symbol, trade_date, open, high, low, close, volume)
+    VALUES ('HOSE:FPT', '2026-10-16', 20000, 20000, 20000, 20000, 1000)`);
+  await repos.market.insertQuoteTicks([
+    { symbol: 'HOSE:FPT', price: 20500, volume: 1000, ceiling: 22000, floor: 17500, refPrice: 20100 },
+  ]);
+
+  const q = (await routes.quotes()).quotes.find(x => x.symbol === 'HOSE:FPT');
+  assert.equal(q.refPrice, 20100);
+  assert.equal(q.ceiling, 22000);
+  assert.equal(q.floor, 17500);
+  assert.equal(q.changePct, 1.99);
+});
+
+test('quotes() tự tính trần/sàn từ giá đóng cửa khi tick không có số VCI', async () => {
+  await client.query(`INSERT INTO ohlcv_daily (symbol, trade_date, open, high, low, close, volume)
+    VALUES ('HOSE:FPT', '2026-10-16', 20000, 20000, 20000, 20000, 1000)`);
+  await repos.market.insertQuoteTicks([{ symbol: 'HOSE:FPT', price: 20500, volume: 1000 }]);
+
+  const q = (await routes.quotes()).quotes.find(x => x.symbol === 'HOSE:FPT');
+  assert.equal(q.refPrice, 20000);
+  assert.equal(q.ceiling, 21400);
+  assert.equal(q.floor, 18600);
+  assert.equal(q.changePct, 2.5);
 });

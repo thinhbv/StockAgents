@@ -13,6 +13,11 @@ const COMMANDS = {
     const symbols = (await repos.universe.listActive()).map(s => s.symbol);
     return runPollQuotes({ repos, symbols });
   },
+  // Cập nhật thủ công, bỏ qua giờ giao dịch — api server spawn lệnh này khi bấm nút trên dashboard.
+  async 'poll-quotes-now'({ repos }) {
+    const symbols = (await repos.universe.listActive()).map(s => s.symbol);
+    return runPollQuotes({ repos, symbols, force: true });
+  },
   async 'ingest-fundamentals'({ repos }) {
     return runIngestFundamentals({ repos });
   },
@@ -37,7 +42,8 @@ const repos = createRepos(client);
 
 command({ repos })
   .then(async (result) => {
-    console.log(JSON.stringify(result, null, 2));
+    // Một dòng JSON: api server đọc lại stdout để lấy kết quả (xem runScript trong routes.js).
+    console.log(JSON.stringify(result));
     await client.close();
   })
   .catch(async (err) => {

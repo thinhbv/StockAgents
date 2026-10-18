@@ -102,7 +102,7 @@ Dữ liệu thị trường thô: nến OHLCV, snapshot chỉ báo kỹ thuật,
 - `getLatestBar(symbol)` — bar gần nhất của một mã.
 - `insertIndicatorSnapshot(symbol, payload)` — ghi một bản chụp chỉ báo kỹ thuật tại một thời điểm.
 - `getLatestIndicatorAgeMinutes()` — tuổi (phút) của mã **CŨ NHẤT** có snapshot trong universe đang bật, không phải mã mới nhất — lấy MAX toàn cục sẽ sai vì một mã tươi che giấu 29 mã cũ. Trả `null` khi không xác định được độ tươi cho toàn universe.
-- `insertQuoteTicks(ticks)` — ghi nhiều tick giá trong một transaction.
+- `insertQuoteTicks(ticks)` — ghi nhiều tick giá (kèm trần/sàn/tham chiếu VCI nếu có) trong một transaction.
 - `insertIndexSnapshots(indices)` / `getLatestIndices(limit)` — ghi/đọc snapshot chỉ số thị trường; `getLatestIndices` lấy bản mới nhất mỗi `index_code`, dùng làm bối cảnh vĩ mô dùng chung bơm vào context mọi agent và đẩy lên dashboard qua sự kiện `market.snapshot`.
 
 ### `packages/db/src/repositories/news.js`

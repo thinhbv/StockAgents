@@ -40,7 +40,7 @@
     "name": "Nhà đầu tư số 4",
     "active": false,
     "provider": "openai",
-    "model": "gpt-5",
+    "model": "gpt-5-mini",
     "initialCapital": 1000000000,
     "riskConfig": {
       "maxPositionPctNav": 15,

@@ -36,7 +36,11 @@
     VN thật. Nên bảng này tự dựng, đọc thẳng /api/quotes — CÙNG một nguồn
     quote_tick mà agent dùng để giao dịch, tự làm mới mỗi 15s.
   -->
-  <h2 class="eyebrow">Bảng giá — danh mục agent</h2>
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    <h2 class="eyebrow">Bảng giá — danh mục agent</h2>
+    <button type="button" id="quotes-refresh">Lấy giá ngay</button>
+    <span id="quotes-status" aria-live="polite"></span>
+  </div>
   <table class="price-board" id="quotes-table">
     <thead>
       <tr>
@@ -252,6 +256,26 @@
   }
   refreshQuotes();
   setInterval(refreshQuotes, QUOTES_REFRESH_MS);
+
+  // Lấy giá ngay từ VCI (bỏ qua giờ giao dịch), rồi tải lại bảng.
+  async function refreshQuotesNow() {
+    const btn = document.getElementById('quotes-refresh');
+    const status = document.getElementById('quotes-status');
+    btn.disabled = true;
+    status.textContent = 'Đang lấy giá…';
+    try {
+      const res = await fetch('/api/quotes/refresh', { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      status.textContent = `Đã cập nhật ${body.inserted} mã${body.failed ? `, ${body.failed} mã lỗi` : ''}.`;
+      await refreshQuotes();
+    } catch (err) {
+      status.textContent = `Lỗi: ${err.message}`;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+  document.getElementById('quotes-refresh').addEventListener('click', refreshQuotesNow);
 
   // Token LLM — tự đọc /api/llm-usage mỗi 20s, chỉ khi tab đang mở (không
   // đáng để phí một request mỗi 20s cho một bảng ít ai nhìn liên tục).

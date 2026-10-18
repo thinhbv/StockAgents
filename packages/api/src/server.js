@@ -51,6 +51,7 @@ export function createServer({ config, logger = console }) {
   router.get('/api/agents/:id/config', routes.agentConfig);
   router.patch('/api/agents/:id/config', routes.updateAgentConfig);
   router.post('/api/agents/:id/reset', routes.resetAgent);
+  router.post('/api/quotes/refresh', routes.refreshQuotes);
 
   // NOTIFY chỉ mang phong bì gọn; đọc bản đầy đủ từ event_log theo id.
   const listener = createEventListener({
@@ -67,15 +68,17 @@ export function createServer({ config, logger = console }) {
       const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
 
       // API chỉ đọc, TRỪ đúng hai cổng ghi: sửa provider/model của agent
-      // trong config/agents.json (updateAgentConfig), và reset agent (xóa vị
-      // thế + nạp lại vốn ban đầu — qua tiến trình con riêng có quyền ghi,
-      // xem resetAgent trong routes.js, client của route này vẫn chỉ đọc).
-      // Mọi phương thức khác GET ngoài hai route đó đều bị từ chối thẳng.
+      // trong config/agents.json (updateAgentConfig), reset agent (xóa vị
+      // thế + nạp lại vốn ban đầu), và lấy giá ngay (ghi quote_tick) — hai
+      // việc sau đều qua tiến trình con riêng có quyền ghi, xem resetAgent và
+      // refreshQuotes trong routes.js; client của route này vẫn chỉ đọc.
+      // Mọi phương thức khác GET ngoài các route đó đều bị từ chối thẳng.
       const isConfigPatch = req.method === 'PATCH' && /^\/api\/agents\/[^/]+\/config$/.test(url.pathname);
       const isResetPost = req.method === 'POST' && /^\/api\/agents\/[^/]+\/reset$/.test(url.pathname);
-      if (req.method !== 'GET' && !isConfigPatch && !isResetPost) {
+      const isQuotesRefreshPost = req.method === 'POST' && url.pathname === '/api/quotes/refresh';
+      if (req.method !== 'GET' && !isConfigPatch && !isResetPost && !isQuotesRefreshPost) {
         res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8' });
-        return res.end('API này chỉ đọc, trừ sửa provider/model agent và reset agent — method không hỗ trợ');
+        return res.end('API này chỉ đọc, trừ sửa provider/model agent, reset agent và lấy giá ngay — method không hỗ trợ');
       }
 
       if (config.token) {

@@ -254,6 +254,21 @@ test('runPollQuotes ghi tick cho các mã truyền vào', async () => {
   assert.equal(rows[0].n, 2);
 });
 
+test('runPollQuotes lưu trần/sàn/tham chiếu VCI cùng tick', async () => {
+  const fetchImpl = makeQuotesFetch([quoteRow('FPT')]); // mặc định: trần 107, sàn 93, tham chiếu 100
+
+  await runPollQuotes({
+    repos, symbols: ['HOSE:FPT'], logger: silent, fetchImpl,
+    now: new Date('2026-07-20T10:00:00+07:00'),
+  });
+
+  const { rows } = await client.query(
+    'SELECT ceiling_price, floor_price, ref_price FROM quote_tick');
+  assert.deepEqual(
+    rows.map(r => [Number(r.ceiling_price), Number(r.floor_price), Number(r.ref_price)]),
+    [[107, 93, 100]]);
+});
+
 test('runPollQuotes bỏ qua ngoài giờ giao dịch, không ghi tick', async () => {
   const fetchImpl = makeQuotesFetch([quoteRow('FPT'), quoteRow('VCB')]);
 

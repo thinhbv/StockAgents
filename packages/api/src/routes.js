@@ -97,15 +97,19 @@ export function createRoutes({
     return {
       quotes: universe.map(u => {
         const p = priceMap.get(u.symbol);
-        const ref = refMap.get(u.symbol) ?? null;
         const price = p?.price ?? null;
+        // Giá tham chiếu, trần, sàn: ưu tiên số chính thức VCI lưu cùng tick.
+        // Tick cũ (trước khi có cột này) hoặc VCI không trả thì rơi về giá đóng
+        // cửa gần nhất, trần/sàn tính theo luật biên độ (priceBand).
+        const ref = p?.refPrice ?? refMap.get(u.symbol) ?? null;
         const changePct = price !== null && ref ? ((price - ref) / ref) * 100 : null;
-        // Trần/sàn suy ra từ giá tham chiếu theo đúng luật biên độ dao động
-        // (priceBand) — TradingView không trả thẳng 2 giá trị này qua CDP,
-        // nhưng chúng tính được 100% từ refPrice + sàn niêm yết, không cần
-        // gọi thêm nguồn nào khác.
         const { exchange } = parseSymbol(u.symbol);
-        const band = ref ? priceBand(ref, exchange) : null;
+        let band = null;
+        if (p?.ceilingPrice != null && p?.floorPrice != null) {
+          band = { ceiling: p.ceilingPrice, floor: p.floorPrice };
+        } else if (ref) {
+          band = priceBand(ref, exchange);
+        }
         return {
           symbol: u.symbol, name: u.name, sector: u.sector,
           price, refPrice: ref,
@@ -391,8 +395,27 @@ export function createRoutes({
     return JSON.parse(jsonLine);
   }
 
+  /**
+   * Lấy giá ngay từ VCI, bỏ qua giờ giao dịch — cùng khuôn với resetAgent:
+   * client của route này chỉ đọc, việc GHI quote_tick giao cho tiến trình
+   * con có quyền ghi (poll:quotes:now → data-service/src/cli.js).
+   */
+  async function refreshQuotes() {
+    let stdout;
+    try {
+      stdout = await runScriptImpl('poll:quotes:now');
+    } catch (err) {
+      throw new HttpError(500, `lấy giá thất bại: ${err.message}`);
+    }
+
+    const jsonLine = stdout.trim().split('\n').findLast(line => line.trim().startsWith('{'));
+    if (!jsonLine) throw new HttpError(500, `lấy giá không trả kết quả hợp lệ: ${stdout.trim()}`);
+    return JSON.parse(jsonLine);
+  }
+
   return {
     session, leaderboard, agent, positions, decisions, lessons, events, history,
     modelCatalog, agentConfig, updateAgentConfig, updateAgentRisk, quotes, llmUsage, resetAgent,
+    refreshQuotes,
   };
 }
