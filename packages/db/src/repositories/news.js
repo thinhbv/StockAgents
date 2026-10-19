@@ -10,12 +10,16 @@ export function createNewsRepo(client) {
     let n = 0;
     for (const it of items) {
       // url là khoá tự nhiên: cùng một bài đăng lại không được đếm hai lần.
+      // Gặp lại bài đã lưu thì vá ngày đăng và mã còn thiếu (bản ghi cũ được
+      // ghi khi nguồn chưa có ngày), nhưng không bao giờ xoá đi thứ đã có.
       const { rowCount } = await client.query(
         `INSERT INTO news_items (symbol, source, url, title, summary, sentiment, published_at, embedding)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
          ON CONFLICT (url) DO UPDATE SET
            title = EXCLUDED.title, summary = EXCLUDED.summary,
-           sentiment = COALESCE(EXCLUDED.sentiment, news_items.sentiment)`,
+           sentiment = COALESCE(EXCLUDED.sentiment, news_items.sentiment),
+           symbol = COALESCE(EXCLUDED.symbol, news_items.symbol),
+           published_at = COALESCE(EXCLUDED.published_at, news_items.published_at)`,
         [it.symbol ?? null, it.source, it.url, it.title, it.summary ?? null,
          it.sentiment ?? null, it.publishedAt ?? null,
          it.embedding ? JSON.stringify(it.embedding) : null]);

@@ -117,6 +117,16 @@ async function buildPriceMaps(client, universe) {
      WHERE symbol = ANY($1) ORDER BY symbol, trade_date DESC`, [symbols]);
   for (const r of ref.rows) refPriceMap.set(r.symbol, toVnd(Number(r.close)));
 
+  // Dự phòng khi ohlcv_daily chưa có mã đó: lấy giá tham chiếu VCI lưu cùng tick,
+  // vì engine từ chối mọi lệnh thiếu giá tham chiếu, kể cả lệnh cắt lỗ.
+  const missingRef = symbols.filter(s => !refPriceMap.has(s));
+  if (missingRef.length > 0) {
+    const vci = await client.query(
+      `SELECT DISTINCT ON (symbol) symbol, ref_price FROM quote_tick
+       WHERE symbol = ANY($1) AND ref_price IS NOT NULL ORDER BY symbol, ts DESC`, [missingRef]);
+    for (const r of vci.rows) refPriceMap.set(r.symbol, toVnd(Number(r.ref_price)));
+  }
+
   // Giá khớp = tick gần nhất; chưa có tick thì dùng giá tham chiếu.
   const tick = await client.query(
     `SELECT DISTINCT ON (symbol) symbol, price FROM quote_tick

@@ -68,6 +68,11 @@ Giá **trong phiên**, ghi mỗi 5 phút bởi `poll_quotes`. Đây là bảng l
 theo số dòng (30 mã × ~66 tick/phiên × mọi ngày). `DISTINCT ON (symbol) ...
 ORDER BY ts DESC` là câu lệnh lấy "giá mới nhất" dùng khắp hệ thống.
 
+Mỗi tick kèm trần, sàn và giá tham chiếu chính thức của VCI (`ceiling_price`,
+`floor_price`, `ref_price`, migration 015). Các cột này NULL với tick cũ và khi
+VCI không trả. Bảng giá thị trường dùng chúng trước, chỉ tự tính từ
+`ohlcv_daily` khi thiếu.
+
 ### `market_index_snapshot`
 VNINDEX và các chỉ số khác — bối cảnh vĩ mô đưa vào prompt agent, không gắn
 với mã cụ thể nên không có FK tới `universe`.

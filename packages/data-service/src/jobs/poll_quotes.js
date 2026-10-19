@@ -13,7 +13,7 @@ const JOB = 'poll_quotes';
  * Nguồn giá là API HTTP công khai Vietcap (VCI), KHÔNG qua CDP/TradingView
  * Desktop nữa — xem collectors/vci_prices.js.
  */
-export async function runPollQuotes({ repos, symbols, logger = console, now = new Date(), fetchImpl }) {
+export async function runPollQuotes({ repos, symbols, logger = console, now = new Date(), fetchImpl, force = false }) {
   if (!symbols || symbols.length === 0) return { inserted: 0, failed: 0 };
 
   // Lịch lễ đọc từ DB mỗi lần chạy, không cache: job này chạy 5 phút một lần
@@ -21,7 +21,8 @@ export async function runPollQuotes({ repos, symbols, logger = console, now = ne
   // có hiệu lực ngay mà không phải khởi động lại tiến trình.
   const holidays = await repos.ops.listHolidays();
 
-  if (!isTradingWindow(now, holidays)) {
+  // force: cập nhật thủ công từ dashboard (nút "Lấy giá ngay") — bỏ qua giờ giao dịch.
+  if (!force && !isTradingWindow(now, holidays)) {
     logger.info('[poll_quotes] ngoài giờ giao dịch, bỏ qua');
     return { inserted: 0, failed: 0, skipped: true };
   }

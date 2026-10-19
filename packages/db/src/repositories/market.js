@@ -83,13 +83,16 @@ export function createMarketRepo(client) {
     return Number(row.age);
   }
 
+  // Trần/sàn/tham chiếu là số VCI trả kèm tick (xem collectVciQuotes); null khi
+  // VCI không trả. Không tự tính ở đây — việc đó thuộc về bảng giá khi thiếu.
   async function insertQuoteTicks(ticks) {
     if (!ticks || ticks.length === 0) return 0;
     return client.withTransaction(async (tx) => {
       for (const t of ticks) {
         await tx.query(
-          `INSERT INTO quote_tick (symbol, price, volume) VALUES ($1, $2, $3)`,
-          [t.symbol, t.price, t.volume ?? null],
+          `INSERT INTO quote_tick (symbol, price, volume, ceiling_price, floor_price, ref_price)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [t.symbol, t.price, t.volume ?? null, t.ceiling ?? null, t.floor ?? null, t.refPrice ?? null],
         );
       }
       return ticks.length;
@@ -129,11 +132,13 @@ export function createMarketRepo(client) {
   async function getLatestQuotes(symbols) {
     if (!symbols || symbols.length === 0) return [];
     const { rows } = await client.query(
-      `SELECT DISTINCT ON (symbol) symbol, price, volume, ts FROM quote_tick
+      `SELECT DISTINCT ON (symbol) symbol, price, volume, ts,
+              ceiling_price, floor_price, ref_price FROM quote_tick
        WHERE symbol = ANY($1) ORDER BY symbol, ts DESC`, [symbols]);
     return rows.map(r => ({
       symbol: r.symbol, price: Number(r.price),
       volume: r.volume === null ? null : Number(r.volume), ts: r.ts,
+      ceilingPrice: num(r.ceiling_price), floorPrice: num(r.floor_price), refPrice: num(r.ref_price),
     }));
   }
 

@@ -160,6 +160,24 @@ test('insertQuoteTicks ghi nhiều tick trong một lần', async () => {
   assert.equal(n, 2);
 });
 
+test('insertQuoteTicks lưu trần/sàn/tham chiếu VCI và getLatestQuotes trả lại đúng', async () => {
+  await market.insertQuoteTicks([
+    { symbol: 'HOSE:FPT', price: 20500, volume: 500, ceiling: 21400, floor: 18600, refPrice: 20100 },
+  ]);
+  const [q] = await market.getLatestQuotes(['HOSE:FPT']);
+  assert.equal(q.ceilingPrice, 21400);
+  assert.equal(q.floorPrice, 18600);
+  assert.equal(q.refPrice, 20100);
+});
+
+test('insertQuoteTicks để NULL khi tick không có trần/sàn/tham chiếu', async () => {
+  await market.insertQuoteTicks([{ symbol: 'HOSE:VCB', price: 92000, volume: 300 }]);
+  const [q] = await market.getLatestQuotes(['HOSE:VCB']);
+  assert.equal(q.ceilingPrice, null);
+  assert.equal(q.floorPrice, null);
+  assert.equal(q.refPrice, null);
+});
+
 test('setSessionState ghi mới rồi ghi đè cùng ngày', async () => {
   await ops.setSessionState('2026-07-21', 'PRE_OPEN', {});
   await ops.setSessionState('2026-07-21', 'OPEN', { note: 'đã ingest xong' });

@@ -6,6 +6,8 @@
  * tham số. `runIngestNews` nhận `sources` để test không phải gọi mạng.
  */
 
+import { decodeEntities } from './sentiment.js';
+
 const BASE = new URL('../../../../tradingview_mcp/news/sources/', import.meta.url);
 
 const MODULES = {
@@ -20,6 +22,54 @@ const MODULES = {
   hmoney24: '24hmoney.js',
 };
 
+// Các module nguồn chỉ lấy tiêu đề và link từ trang chủ, không có ngày đăng.
+// Ngày nằm trong metadata của chính trang bài viết nên đọc từ đó.
+const PUBLISHED_META = [
+  /<meta[^>]+(?:property|name|itemprop)=["'](?:article:published_time|og:published_time|pubdate|publishdate|publish_date|dc\.date(?:\.issued)?|datePublished)["'][^>]*content=["']([^"']+)["']/i,
+  /<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name|itemprop)=["'](?:article:published_time|og:published_time|pubdate|publishdate|publish_date|dc\.date(?:\.issued)?|datePublished)["']/i,
+  /<time[^>]+datetime=["']([^"']+)["']/i,
+];
+
+const PAGE_CONCURRENCY = 4;
+
+/**
+ * Ngày đăng (ISO) đọc từ HTML của một bài. Chuỗi không có múi giờ được hiểu là
+ * giờ Việt Nam. Không đọc được thì trả null, không đoán: bài đó sẽ không lọt
+ * vào các cửa sổ thời gian thay vì bị coi là tin mới.
+ */
+export function parsePublishedAt(html) {
+  for (const re of PUBLISHED_META) {
+    const m = html.match(re);
+    if (!m) continue;
+    const s = decodeEntities(m[1])                          // &#x2B;07:00 → +07:00 (vneconomy)
+      .replace(/([+-]\d{2})(\d{2})$/, '$1:$2')              // +0700 → +07:00
+      .replace(/^(\d{4}-\d{2}-\d{2}T[\d:.]+)$/, '$1+07:00'); // không có múi giờ
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  return null;
+}
+
+/** Tải từng trang bài để lấy ngày đăng. Bài nào không tải được vẫn được giữ, chỉ thiếu ngày. */
+async function withPublishedAt(items, fetchHtml) {
+  const out = [];
+  for (let i = 0; i < items.length; i += PAGE_CONCURRENCY) {
+    const batch = items.slice(i, i + PAGE_CONCURRENCY);
+    const dated = await Promise.all(batch.map(async (item) => {
+      if (item.publishedAt) return item;
+      let publishedAt = null;
+      try {
+        publishedAt = parsePublishedAt(await fetchHtml(item.url));
+      } catch {
+        // Không tải được trang: để null.
+      }
+      return { ...item, publishedAt };
+    }));
+    out.push(...dated);
+  }
+  return out;
+}
+
 /**
  * Trả về `{ tên: async () => article[] }` đúng hình dạng runIngestNews cần.
  *
@@ -27,6 +77,7 @@ const MODULES = {
  * `tradingview_mcp` là repo riêng và có thể đổi mà không báo trước.
  */
 export async function loadNewsSources({ limit = 12, logger = console } = {}) {
+  const { fetchHtml } = await import(new URL('_fetch.js', BASE).href);
   const sources = {};
 
   for (const [name, file] of Object.entries(MODULES)) {
@@ -36,7 +87,7 @@ export async function loadNewsSources({ limit = 12, logger = console } = {}) {
         logger.warn(`[news] ${name}: module không có hàm fetch, bỏ qua`);
         continue;
       }
-      sources[name] = () => mod.fetch(limit);
+      sources[name] = async () => withPublishedAt(await mod.fetch(limit), fetchHtml);
     } catch (err) {
       logger.warn(`[news] ${name}: không nạp được module — ${err.message}`);
     }

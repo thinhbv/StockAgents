@@ -246,6 +246,16 @@ async function buildRefPriceMap(client, universe) {
     `SELECT DISTINCT ON (symbol) symbol, close FROM ohlcv_daily
      WHERE symbol = ANY($1) ORDER BY symbol, trade_date DESC`, [symbols]);
   for (const r of rows) map.set(r.symbol, toVnd(Number(r.close)));
+
+  // Dự phòng khi ohlcv_daily chưa có mã đó: engine từ chối MỌI lệnh thiếu giá
+  // tham chiếu, kể cả lệnh cắt lỗ — nên lấy giá tham chiếu VCI đã lưu cùng tick.
+  const missing = symbols.filter(s => !map.has(s));
+  if (missing.length > 0) {
+    const { rows: vci } = await client.query(
+      `SELECT DISTINCT ON (symbol) symbol, ref_price FROM quote_tick
+       WHERE symbol = ANY($1) AND ref_price IS NOT NULL ORDER BY symbol, ts DESC`, [missing]);
+    for (const r of vci) map.set(r.symbol, toVnd(Number(r.ref_price)));
+  }
   return map;
 }
 

@@ -4,14 +4,26 @@ import { runIngestPrices } from './jobs/ingest_prices.js';
 import { runPollQuotes } from './jobs/poll_quotes.js';
 import { runIngestFundamentals } from './jobs/ingest_fundamentals.js';
 import { runPollIntradayFlow } from './jobs/poll_intraday_flow.js';
+import { runIngestNews } from './jobs/ingest_news.js';
+import { loadNewsSources, loadMarketIndices } from './news/sources.js';
 
 const COMMANDS = {
   async 'ingest-prices'({ repos }) {
     return runIngestPrices({ repos });
   },
+  // Tin tức và chỉ số thị trường, cùng nhịp với ingest_news trong scheduler.
+  async 'ingest-news'({ repos }) {
+    const sources = await loadNewsSources({ limit: 12 });
+    return runIngestNews({ repos, sources, indices: () => loadMarketIndices() });
+  },
   async 'poll-quotes'({ repos }) {
     const symbols = (await repos.universe.listActive()).map(s => s.symbol);
     return runPollQuotes({ repos, symbols });
+  },
+  // Cập nhật thủ công, bỏ qua giờ giao dịch — api server spawn lệnh này khi bấm nút trên dashboard.
+  async 'poll-quotes-now'({ repos }) {
+    const symbols = (await repos.universe.listActive()).map(s => s.symbol);
+    return runPollQuotes({ repos, symbols, force: true });
   },
   async 'ingest-fundamentals'({ repos }) {
     return runIngestFundamentals({ repos });
@@ -37,7 +49,8 @@ const repos = createRepos(client);
 
 command({ repos })
   .then(async (result) => {
-    console.log(JSON.stringify(result, null, 2));
+    // Một dòng JSON: api server đọc lại stdout để lấy kết quả (xem runScript trong routes.js).
+    console.log(JSON.stringify(result));
     await client.close();
   })
   .catch(async (err) => {
