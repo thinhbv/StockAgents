@@ -108,7 +108,7 @@ Dữ liệu thị trường thô: nến OHLCV, snapshot chỉ báo kỹ thuật,
 ### `packages/db/src/repositories/news.js`
 Bảng `news_items` — tin tức thị trường dùng chung cho mọi agent, không có khái niệm "sở hữu theo agent" nên cố tình **không** gọi `assertAgentScope`.
 
-- `upsertMany(items)` — chèn nhiều tin, dùng `url` làm khoá tự nhiên (`ON CONFLICT (url) DO UPDATE`); chỉ ghi đè `sentiment` nếu bản mới có giá trị, tránh một lần crawl lại thiếu điểm sentiment xoá mất điểm đã có.
+- `upsertMany(items)` — chèn nhiều tin, dùng `url` làm khoá tự nhiên (`ON CONFLICT (url) DO UPDATE`); chỉ ghi đè `sentiment` nếu bản mới có giá trị, tránh một lần crawl lại thiếu điểm sentiment xoá mất điểm đã có. Gặp lại bài đã lưu thì vá `symbol` và `published_at` còn thiếu (COALESCE), không bao giờ xoá đi giá trị đã có.
 - `listRecent({ symbol, since, limit })` — lấy tin gần đây, lọc theo mã và mốc thời gian tuỳ chọn.
 - `worstSentimentBySymbol({ since })` — với mỗi mã, lấy sentiment THẤP NHẤT (MIN) trong khung thời gian — cố ý không lấy trung bình, vì một tin cực xấu bị pha loãng bởi vài tin trung tính không được phép biến mất khỏi tín hiệu; đây là dữ liệu watchdog dùng để quyết định đánh thức agent giữa phiên vì tin xấu.
 
@@ -275,7 +275,8 @@ Job 02:00, xoá bản ghi `event_log` cũ hơn số ngày lưu trữ cấu hình
 ### `packages/data-service/src/news/sources.js`
 Điểm chạm DUY NHẤT biết tới các module nguồn tin trong `tradingview_mcp/news/sources/`.
 
-- `loadNewsSources({ limit = 12, logger })` — nạp động 6 module nguồn tin VN (cafef, vnexpress, vietstock, vneconomy, vietnambiz, tinnhanh); nguồn không nạp được thì BỎ QUA (vì `tradingview_mcp` là repo riêng có thể đổi cấu trúc); không nạp được nguồn nào cả thì ném lỗi.
+- `loadNewsSources({ limit = 12, logger })` — nạp động 9 module nguồn tin VN; nguồn không nạp được thì BỎ QUA (vì `tradingview_mcp` là repo riêng có thể đổi cấu trúc); không nạp được nguồn nào cả thì ném lỗi. Module chỉ lấy tiêu đề/link từ trang chủ, nên mỗi bài được tải trang để đọc ngày đăng (4 trang song song); tải lỗi thì bài vẫn được giữ với `publishedAt` null.
+- `parsePublishedAt(html)` — đọc ngày đăng từ metadata của trang bài (`article:published_time`, `pubdate`, `datePublished`, hoặc `<time datetime>`), giải mã thực thể HTML (`&#x2B;` → `+`), chuỗi không có múi giờ hiểu là giờ Việt Nam; không đọc được thì trả null, không đoán.
 - `loadMarketIndices({ logger })` — nạp chỉ số thị trường từ SSI iBoard, lọc mục thiếu `id`/`value` không hữu hạn; lỗi mạng/parse trả mảng rỗng, không ném ra.
 
 ### `packages/data-service/src/news/sentiment.js`
@@ -516,7 +517,7 @@ Máy trạng thái điều phối TRỌN MỘT NGÀY cho một agent (Phase 3): 
   - **WATCHING** — lặp qua tick, gọi `watchdog.tick()` cho cả vị thế lẫn universe alert; `newsSentimentMap` là sentiment TỆ NHẤT 24h.
   - **CLOSING** — mark-to-market bằng giá cuối cùng thấy được.
   - **LEARNING** — theo thứ tự: ghép vòng (`recordOutcomes`) → chấm điểm bài học (`applyOutcome`) → tính metric (`computeAndSaveMetrics`) → rút bài học mới (`reflect`).
-- `mapToVnd` / `buildRefPriceMap` / `buildTickPriceMap` (nội bộ) — quy đổi giá và dựng price map.
+- `mapToVnd` / `buildRefPriceMap` / `buildTickPriceMap` (nội bộ) — quy đổi giá và dựng price map. `buildRefPriceMap` lấy giá đóng cửa từ `ohlcv_daily`; mã nào chưa có thì dùng `quote_tick.ref_price` (giá tham chiếu VCI) làm dự phòng, vì engine từ chối mọi lệnh thiếu giá tham chiếu.
 
 ---
 

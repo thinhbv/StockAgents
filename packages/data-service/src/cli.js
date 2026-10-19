@@ -4,10 +4,17 @@ import { runIngestPrices } from './jobs/ingest_prices.js';
 import { runPollQuotes } from './jobs/poll_quotes.js';
 import { runIngestFundamentals } from './jobs/ingest_fundamentals.js';
 import { runPollIntradayFlow } from './jobs/poll_intraday_flow.js';
+import { runIngestNews } from './jobs/ingest_news.js';
+import { loadNewsSources, loadMarketIndices } from './news/sources.js';
 
 const COMMANDS = {
   async 'ingest-prices'({ repos }) {
     return runIngestPrices({ repos });
+  },
+  // Tin tức và chỉ số thị trường, cùng nhịp với ingest_news trong scheduler.
+  async 'ingest-news'({ repos }) {
+    const sources = await loadNewsSources({ limit: 12 });
+    return runIngestNews({ repos, sources, indices: () => loadMarketIndices() });
   },
   async 'poll-quotes'({ repos }) {
     const symbols = (await repos.universe.listActive()).map(s => s.symbol);

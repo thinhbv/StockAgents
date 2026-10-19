@@ -11,6 +11,7 @@
     "test": "node scripts/run-tests.mjs",
     "data-service": "node packages/data-service/src/index.js",
     "ingest:prices": "node packages/data-service/src/cli.js ingest-prices",
+    "ingest:news": "node packages/data-service/src/cli.js ingest-news",
     "poll:quotes": "node packages/data-service/src/cli.js poll-quotes",
     "poll:quotes:now": "node packages/data-service/src/cli.js poll-quotes-now",
     "ingest:fundamentals": "node packages/data-service/src/cli.js ingest-fundamentals",

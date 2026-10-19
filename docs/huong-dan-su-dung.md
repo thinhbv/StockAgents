@@ -550,6 +550,7 @@ npm run data-service                              # scheduler chạy nền
 npm run api                                       # dashboard :8080
 
 npm run ingest:prices                             # lấy giá + tính chỉ báo
+npm run ingest:news                               # tin tức (có ngày đăng) + chỉ số thị trường (SSI)
 npm run poll:quotes                               # thu báo giá trong phiên
 npm run ingest:fundamentals                       # chỉ số cơ bản + doanh thu/lợi nhuận (VCI)
 npm run poll:intraday-flow                        # VWAP/order book/khối ngoại/áp lực mua-bán (VCI)

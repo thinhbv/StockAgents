@@ -36,6 +36,7 @@ npm run migrate
 ```bash
 npm run data-service      # scheduler chạy nền
 npm run ingest:prices     # chạy tay một lần
+npm run ingest:news       # tin tức + chỉ số thị trường, chạy tay một lần
 npm run poll:quotes
 ```
 

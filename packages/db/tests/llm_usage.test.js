@@ -138,10 +138,14 @@ test('totalsByAgent với date chỉ gộp bản ghi ĐÚNG ngày VN đó, bỏ 
 });
 
 test('recent với date chỉ trả bản ghi đúng ngày, không bị giới hạn bởi sinceHours mặc định', async () => {
+  // Hai bản ghi cố định lúc 9h và 10h sáng (giờ VN) của đúng ngày 30 ngày trước.
+  // Không cộng giờ từ now(): lúc 23h VN, +1 giờ sẽ sang ngày hôm sau và test đỏ.
   await client.query(
     `INSERT INTO llm_usage (agent_id, provider, model, purpose, input_tokens, created_at) VALUES
-       ('a1', 'anthropic', 'm', 'decision', 1, now() - interval '30 days'),
-       ('a1', 'anthropic', 'm', 'decision', 2, now() - interval '30 days' + interval '1 hour')`);
+       ('a1', 'anthropic', 'm', 'decision', 1,
+         (date_trunc('day', now() AT TIME ZONE 'Asia/Ho_Chi_Minh') - interval '30 days' + interval '9 hours') AT TIME ZONE 'Asia/Ho_Chi_Minh'),
+       ('a1', 'anthropic', 'm', 'decision', 2,
+         (date_trunc('day', now() AT TIME ZONE 'Asia/Ho_Chi_Minh') - interval '30 days' + interval '10 hours') AT TIME ZONE 'Asia/Ho_Chi_Minh')`);
   const theDate = await client.query(
     `SELECT to_char((now() - interval '30 days') AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD') AS d`);
   const date = theDate.rows[0].d;
