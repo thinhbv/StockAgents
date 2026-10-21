@@ -34,12 +34,12 @@
       "dailyLossLimitPct": 5
     },
     "personaPrompt": "persona.md",
-    "active": false
+    "active": true
   },
   {
     "id": "deepseek_quant",
     "name": "Nhà đầu tư số 4",
-    "active": false,
+    "active": true,
     "provider": "openai",
     "model": "gpt-5-mini",
     "initialCapital": 1000000000,
@@ -52,7 +52,7 @@
   {
     "id": "claude_contrarian",
     "name": "Nhà đầu tư số 5",
-    "active": false,
+    "active": true,
     "provider": "openai",
     "model": "gpt-5-mini",
     "initialCapital": 1000000000,

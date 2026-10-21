@@ -608,12 +608,22 @@ function openStream() {
     let e;
     try { e = JSON.parse(msg.data); } catch { return; }
     pushEvent(e);
-    // Sự kiện làm đổi số liệu thì làm mới bảng.
+    // Sự kiện làm đổi số liệu thì làm mới bảng. Gom lại: khi mở trang, server
+    // phát lại hàng trăm sự kiện cũ cùng lúc, không được gọi API cho từng cái.
     if (['order.filled', 'metrics.updated', 'trigger.fired'].includes(e.type)) {
-      refreshBoard().catch(() => {});
+      scheduleBoardRefresh();
     }
     if (e.type === 'session.state') refreshSession().catch(() => {});
   }
+}
+
+let boardRefreshTimer = null;
+function scheduleBoardRefresh() {
+  clearTimeout(boardRefreshTimer);
+  boardRefreshTimer = setTimeout(() => {
+    boardRefreshTimer = null;
+    refreshBoard().catch(() => {});
+  }, 400);
 }
 
 /* ---------- Khởi động ---------- */
